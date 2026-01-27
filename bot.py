@@ -1,6 +1,8 @@
 from interactions import Client, Intents, slash_command, SlashContext, listen,slash_option,OptionType
 from dotenv import load_dotenv
 import os
+import asyncio
+from aiohttp import web
 
 from querying import data_querying
 from manage_embedding import update_index
@@ -9,6 +11,21 @@ load_dotenv()
 
 
 bot = Client(intents=Intents.DEFAULT | Intents.GUILD_MESSAGES | Intents.MESSAGE_CONTENT)
+
+# Health check server for Render
+async def health_check(request):
+    return web.Response(text="Bot is running!", status=200)
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv('PORT', 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Health check server running on port {port}")
 
 
 @listen() 
@@ -57,5 +74,11 @@ async def updated_database(ctx: SlashContext):
     await ctx.send(response)
 
 
+async def main():
+    # Start health check server
+    await start_health_server()
+    # Start bot
+    await bot.astart(os.getenv("DISCORD_BOT_TOKEN"))
 
-bot.start(os.getenv("DISCORD_BOT_TOKEN"))
+if __name__ == "__main__":
+    asyncio.run(main())
