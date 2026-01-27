@@ -1,4 +1,9 @@
 pypdf==3.17.4
 python-dotenv==1.0.0
-llama-index==0.9.27
+llama-index-core==0.14.13
 discord-py-interactions==5.11.0
+llama-index-llms-google-genai
+llama-index-llms-groq
+llama-index-llms-openrouter
+llama-index-embeddings-nvidia
+llama-index-vector-stores-pinecone

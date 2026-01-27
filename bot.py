@@ -8,7 +8,7 @@ from manage_embedding import update_index
 load_dotenv()
 
 
-bot = Client(intents=Intents.ALL)
+bot = Client(intents=Intents.DEFAULT | Intents.GUILD_MESSAGES | Intents.MESSAGE_CONTENT)
 
 
 @listen() 
@@ -20,7 +20,8 @@ async def on_ready():
 @listen()
 async def on_message_create(event):
     # This event is called when a message is sent in a channel the bot can see
-    print(f"message received: {event.message.content}")
+    if event.message.content:
+        print(f"message received: {event.message.content}")
 
 
 @slash_command(name="query", description="Enter your query :)")
@@ -33,15 +34,24 @@ async def on_message_create(event):
 async def get_response(ctx: SlashContext, input_text: str):
     await ctx.defer()
     response = await data_querying(input_text)
-    response = f'**Input Query**: {input_text}\n\n{response}'
-    await ctx.send(response)
+    
+    # Format response with query
+    full_response = f'**Input Query**: {input_text}\n\n{response}'
+    
+    # Truncate if exceeds Discord's 2000 character limit
+    if len(full_response) > 2000:
+        max_response_length = 2000 - len(f'**Input Query**: {input_text}\n\n') - 50  # Reserve space for truncation message
+        truncated = response[:max_response_length]
+        full_response = f'**Input Query**: {input_text}\n\n{truncated}\n\n...[Response truncated]'
+    
+    await ctx.send(full_response)
 
 @slash_command(name="updatedb", description="Update your information database :)")
 async def updated_database(ctx: SlashContext):
     await ctx.defer()
     update = await update_index()
     if update:
-        response = f'Updated {sum(update)} document chunks'
+        response = f'Successfully updated database with {update} documents'
     else:
         response = f'Error updating index'
     await ctx.send(response)
