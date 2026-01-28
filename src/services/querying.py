@@ -239,7 +239,12 @@ Instructions:
 - If relevant, use ONLY the information from the retrieved content above
 - Answer the question directly and concisely
 - List all relevant topics/subjects mentioned in the retrieved information
-- Include ALL information that answers the user's question
+- Include ALL information that answers the user's question, including:
+  * ALL URLs and links exactly as they appear in the retrieved content
+  * YouTube channel names and playlists with their URLs
+  * Book recommendations with purchase links
+  * Online resource links (NPTEL, GeeksforGeeks, etc.)
+- Preserve the original formatting of links (markdown format [text](url) or plain URLs)
 - Do NOT add information not present in the retrieved content
 - If the retrieved content doesn't contain the answer, say: "I don't have specific information about this. Please check the #resources channel for comprehensive LEEE information."
 

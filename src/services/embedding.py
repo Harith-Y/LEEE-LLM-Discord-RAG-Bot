@@ -82,7 +82,8 @@ class EmbeddingService:
         logger.info(f"Initializing OpenRouter with {Config.LLM_MODEL}...")
         llm = OpenRouter(
             model=Config.LLM_MODEL,
-            api_key=Config.OPENROUTER_API_KEY
+            api_key=Config.OPENROUTER_API_KEY,
+            max_tokens=2048  # Increased token limit for complete responses
         )
         
         Settings.llm = llm
