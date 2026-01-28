@@ -31,7 +31,10 @@ async def start_health_server():
 @listen() 
 async def on_ready():
     print("Ready")
-    # print(f"This bot is owned by {bot.owner}")
+    print(f"Bot is connected as {bot.user}")
+    print(f"Syncing commands...")
+    await bot.synchronise_interactions()
+    print("Commands synced!")
 
 
 @listen()
