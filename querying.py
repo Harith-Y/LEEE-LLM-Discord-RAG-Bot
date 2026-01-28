@@ -54,7 +54,6 @@ Instructions:
 - Include ALL information that answers the user's question
 - Do NOT add information not present in the retrieved content
 - If the retrieved content doesn't contain the answer, say: "I don't have specific information about this. Please check the #resources channel for comprehensive LEEE information."
-- ALWAYS end your response with: "\n\n*Note: Check the #resources channel for more comprehensive LEEE information and resources.*"
 
 Answer:"""
     
