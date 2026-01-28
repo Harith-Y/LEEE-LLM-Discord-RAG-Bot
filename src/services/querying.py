@@ -236,16 +236,15 @@ User Question: {query}
 Instructions:
 - First, check if the question is relevant to LEEE, IIIT Hyderabad, or related academic topics
 - If the question contains inappropriate language, curse words, or is completely unrelated to LEEE/IIITH, respond politely: "I'm designed to answer questions about IIIT Hyderabad's LEEE program. Please check the #resources channel for comprehensive information."
-- If relevant, use ONLY the information from the retrieved content above
+- If relevant, use the information from the retrieved content above
 - Answer the question directly and concisely
-- List all relevant topics/subjects mentioned in the retrieved information
+- List all relevant information mentioned in the retrieved information
 - Include ALL information that answers the user's question, including:
-  * ALL URLs and links exactly as they appear in the retrieved content
-  * YouTube channel names and playlists with their URLs
-  * Book recommendations with purchase links
-  * Online resource links (NPTEL, GeeksforGeeks, etc.)
+  * ALL URLs and links exactly as they appear in the retrieved content (if any)
+  * YouTube channel names and playlists with their URLs (if any)
+  * Book recommendations with purchase links (if any)
+  * Online resource links (NPTEL, GeeksforGeeks, etc.) (if any)
 - Preserve the original formatting of links (markdown format [text](url) or plain URLs)
-- Do NOT add information not present in the retrieved content
 - If the retrieved content doesn't contain the answer, say: "I don't have specific information about this. Please check the #resources channel for comprehensive LEEE information."
 
 Answer:"""
