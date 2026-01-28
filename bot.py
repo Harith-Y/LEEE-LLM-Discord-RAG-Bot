@@ -1,88 +1,361 @@
-from interactions import Client, Intents, slash_command, SlashContext, listen,slash_option,OptionType
+"""
+LEEE Discord RAG Bot - Main bot with improved architecture
+Optimized for both local development and Render deployment
+"""
+from interactions import Client, Intents, slash_command, SlashContext, listen, slash_option, OptionType
 from dotenv import load_dotenv
 import os
 import asyncio
 from aiohttp import web
+import logging
+import sys
 
-from querying import data_querying
-from manage_embedding import update_index
+# Import new services and utilities
+from src.config import Config
+from src.utils.metrics import metrics
+from src.utils.rate_limiter import get_rate_limiter
+from src.services.querying import get_query_service
 
+# Load environment variables
 load_dotenv()
 
+# Initialize logging - Render-compatible (console logging)
+def setup_logging():
+    """Setup logging that works for both local and Render"""
+    logger = logging.getLogger()
+    logger.handlers.clear()
+    
+    # Detailed formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Console handler (works everywhere)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    # File handler only if not on Render (optional local logging)
+    if not os.getenv('RENDER'):
+        try:
+            from pathlib import Path
+            from logging.handlers import RotatingFileHandler
+            
+            log_dir = Path(Config.LOG_DIR)
+            log_dir.mkdir(exist_ok=True)
+            
+            file_handler = RotatingFileHandler(
+                log_dir / 'bot.log',
+                maxBytes=10*1024*1024,
+                backupCount=5,
+                encoding='utf-8'
+            )
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except Exception as e:
+            print(f"Could not setup file logging: {e}")
+    
+    logger.setLevel(getattr(logging, Config.LOG_LEVEL.upper(), logging.INFO))
+    
+    # Suppress noisy loggers
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('httpcore').setLevel(logging.WARNING)
+    logging.getLogger('aiohttp').setLevel(logging.WARNING)
+    
+    return logger
 
+logger = setup_logging()
+
+# Initialize bot
 bot = Client(intents=Intents.DEFAULT | Intents.GUILD_MESSAGES | Intents.MESSAGE_CONTENT)
 
-# Health check server for Render
+# Initialize services
+query_service = get_query_service()
+rate_limiter = get_rate_limiter(
+    max_requests=Config.RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=Config.RATE_LIMIT_WINDOW_SECONDS
+)
+
+
+# Health check server for Render/Fly.io
 async def health_check(request):
-    return web.Response(text="Bot is running!", status=200)
+    """Enhanced health check endpoint with system status"""
+    try:
+        # Get service stats
+        query_stats = await query_service.get_stats()
+        metrics_data = metrics.to_dict()
+        cache_stats = await query_service.cache_manager.get_cache_stats()
+        
+        health_data = {
+            'status': 'healthy' if query_stats['initialized'] else 'initializing',
+            'platform': 'render' if os.getenv('RENDER') else 'local',
+            'bot': {
+                'connected': bot.user is not None,
+                'username': str(bot.user) if bot.user else None,
+            },
+            'services': {
+                'query_service_initialized': query_stats['initialized'],
+                'index_cached': cache_stats['index_cached'],
+            },
+            'metrics': metrics_data,
+            'config': Config.get_summary(),
+        }
+        
+        status_code = 200 if health_data['status'] == 'healthy' else 503
+        return web.json_response(health_data, status=status_code)
+        
+    except Exception as e:
+        logger.error(f"Health check error: {e}", exc_info=True)
+        return web.json_response({
+            'status': 'unhealthy',
+            'error': str(e)
+        }, status=503)
+
 
 async def start_health_server():
+    """Start the health check HTTP server"""
     app = web.Application()
     app.router.add_get('/', health_check)
     app.router.add_get('/health', health_check)
+    
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.getenv('PORT', 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
+    
+    site = web.TCPSite(runner, Config.HOST, Config.PORT)
     await site.start()
-    print(f"Health check server running on port {port}")
+    
+    logger.info(f"Health check server running on {Config.HOST}:{Config.PORT}")
 
 
-@listen() 
+@listen()
 async def on_ready():
-    print("Ready")
-    print(f"Bot is connected as {bot.user}")
-    print(f"Syncing commands...")
-    await bot.synchronise_interactions()
-    print("Commands synced!")
+    """Bot ready event handler"""
+    platform = "Render ☁️" if os.getenv('RENDER') else "Local 💻"
+    logger.info("=" * 60)
+    logger.info(f"Bot Ready on {platform}")
+    
+    # Synchronize slash commands
+    logger.info("Syncing commands...")
+    try:
+        await bot.synchronise_interactions()
+        logger.info("Commands synced successfully!")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}", exc_info=True)
+    
+    # Initialize query service
+    try:
+        logger.info("Initializing query service...")
+        await query_service.initialize()
+        logger.info("Query service initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize query service: {e}", exc_info=True)
+    
+    # Log configuration summary
+    config_summary = Config.get_summary()
+    logger.info(f"Configuration: {config_summary}")
+    logger.info("=" * 60)
 
 
 @listen()
 async def on_message_create(event):
-    # This event is called when a message is sent in a channel the bot can see
-    if event.message.content:
-        print(f"message received: {event.message.content}")
+    """Message creation event handler for logging"""
+    if event.message.content and not event.message.author.bot:
+        logger.debug(f"Message from {event.message.author}: {event.message.content[:100]}")
 
 
-@slash_command(name="query", description="Enter your query :)")
+@slash_command(name="query", description="Ask a question about IIIT Hyderabad's LEEE program")
 @slash_option(
     name="input_text",
-    description="input text",
+    description="Your question about LEEE",
     required=True,
     opt_type=OptionType.STRING,
 )
 async def get_response(ctx: SlashContext, input_text: str):
+    """
+    Handle query command with rate limiting, validation, and error handling
+    
+    Args:
+        ctx: Slash command context
+        input_text: User's query
+    """
+    user_id = str(ctx.author.id)
+    logger.info(f"Query from user {user_id} ({ctx.author}): {input_text[:100]}")
+    
+    # Defer response since processing might take time
     await ctx.defer()
-    response = await data_querying(input_text)
     
-    # Format response with query
-    full_response = f'**Input Query**: {input_text}\n\n{response}'
+    try:
+        # Rate limiting check
+        is_allowed, seconds_until_reset = await rate_limiter.is_allowed(user_id)
+        
+        if not is_allowed:
+            error_msg = (
+                f"⏱️ Rate limit exceeded! Please wait {seconds_until_reset} seconds before trying again.\n\n"
+                f"You can make {Config.RATE_LIMIT_MAX_REQUESTS} requests every "
+                f"{Config.RATE_LIMIT_WINDOW_SECONDS} seconds."
+            )
+            logger.warning(f"Rate limit exceeded for user {user_id}")
+            await ctx.send(error_msg, ephemeral=True)
+            return
+        
+        # Process query
+        try:
+            response = await query_service.process_query(input_text)
+            
+            # Format response with query
+            full_response = f'**Query**: {input_text}\n\n{response}'
+            
+            # Truncate if exceeds Discord's character limit
+            if len(full_response) > Config.MAX_RESPONSE_LENGTH:
+                truncation_msg = '\n\n...[Response truncated due to length limit]'
+                max_length = Config.MAX_RESPONSE_LENGTH - len(truncation_msg)
+                full_response = full_response[:max_length] + truncation_msg
+            
+            await ctx.send(full_response)
+            logger.info(f"Successfully responded to user {user_id}")
+            
+        except ValueError as e:
+            # Validation error
+            error_msg = f"❌ Invalid query: {str(e)}\n\nPlease check your input and try again."
+            logger.warning(f"Validation error for user {user_id}: {e}")
+            await ctx.send(error_msg, ephemeral=True)
+            
+        except Exception as e:
+            # Other errors
+            error_msg = (
+                "❌ Sorry, I encountered an error processing your query. "
+                "Please try again or contact an administrator if the issue persists."
+            )
+            logger.error(f"Error processing query for user {user_id}: {e}", exc_info=True)
+            await ctx.send(error_msg, ephemeral=True)
     
-    # Truncate if exceeds Discord's 2000 character limit
-    if len(full_response) > 2000:
-        max_response_length = 2000 - len(f'**Input Query**: {input_text}\n\n') - 50  # Reserve space for truncation message
-        truncated = response[:max_response_length]
-        full_response = f'**Input Query**: {input_text}\n\n{truncated}\n\n...[Response truncated]'
-    
-    await ctx.send(full_response)
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logger.critical(f"Unexpected error in query handler: {e}", exc_info=True)
+        try:
+            await ctx.send(
+                "❌ An unexpected error occurred. Please try again later.",
+                ephemeral=True
+            )
+        except:
+            pass  # Failed to send error message
 
-# Disabled: Use update_db.py script instead
-# @slash_command(name="updatedb", description="Update your information database :)")
-# async def updated_database(ctx: SlashContext):
-#     await ctx.defer()
-#     update = await update_index()
-#     if update:
-#         response = f'Successfully updated database with {update} documents'
-#     else:
-#         response = f'Error updating index'
-#     await ctx.send(response)
+
+@slash_command(name="stats", description="View bot statistics and health")
+async def show_stats(ctx: SlashContext):
+    """
+    Show bot statistics
+    
+    Args:
+        ctx: Slash command context
+    """
+    await ctx.defer(ephemeral=True)
+    
+    try:
+        metrics_data = metrics.to_dict()
+        query_stats = await query_service.get_stats()
+        
+        # Build stats message
+        platform = "Render ☁️" if os.getenv('RENDER') else "Local 💻"
+        stats_message = f"📊 **Bot Statistics** ({platform})\n\n"
+        stats_message += f"**Queries:**\n"
+        stats_message += f"• Total: {metrics_data['total_queries']}\n"
+        stats_message += f"• Successful: {metrics_data['successful_queries']}\n"
+        stats_message += f"• Failed: {metrics_data['failed_queries']}\n"
+        stats_message += f"• Success Rate: {metrics_data['success_rate']}\n\n"
+        
+        stats_message += f"**Performance:**\n"
+        stats_message += f"• Avg Response Time: {metrics_data['average_response_time']}\n"
+        stats_message += f"• Cache Hit Rate: {metrics_data['cache_hit_rate']}\n"
+        stats_message += f"• Uptime: {metrics_data['uptime_seconds']}\n\n"
+        
+        stats_message += f"**Cache:**\n"
+        cache_stats = query_stats['cache']
+        stats_message += f"• Response Cache: {cache_stats['response_cache_size']}/{cache_stats['response_cache_max_size']}\n"
+        stats_message += f"• Index Cached: {'Yes' if cache_stats['index_cached'] else 'No'}\n\n"
+        
+        stats_message += f"**Index:**\n"
+        index_stats = query_stats['index']
+        
+        if os.getenv('RENDER'):
+            stats_message += "⚠️ Note: Stats reset on Render restarts"
+        stats_message += f"• Total Vectors: {index_stats.get('total_vectors', 'N/A')}\n"
+        
+        await ctx.send(stats_message, ephemeral=True)
+        
+    except Exception as e:
+        logger.error(f"Error showing stats: {e}", exc_info=True)
+        await ctx.send("❌ Failed to retrieve statistics", ephemeral=True)
+
+
+@slash_command(name="help", description="Get help on using the bot")
+async def show_help(ctx: SlashContext):
+    """
+    Show help information
+    """
+    platform = "Render ☁️" if os.getenv('RENDER') else "Local 💻"
+    help_message = f"""
+    📖 **LEEE Bot Help** ({platform})
+    
+    **Available Commands:**
+    • `/query <question>` - Ask a question about LEEE
+    • `/stats` - View bot statistics
+    • `/help` - Show this help message
+    
+    **Usage Tips:**
+    • Be specific in your questions
+    • Ask about LEEE-related topics only
+    • Check #resources for comprehensive information
+    
+    **Rate Limits:**
+    • {Config.RATE_LIMIT_MAX_REQUESTS} requests per {Config.RATE_LIMIT_WINDOW_SECONDS}s
+    • Exceeded? Wait briefly and try again
+    
+    **Examples:**
+    • "What subjects are covered in LEEE?"
+    • "What is the LEEE syllabus?"
+    • "How do I prepare for LEEE?"
+    """
+    
+    await ctx.send(help_message, ephemeral=True)
 
 
 async def main():
-    # Start health check server
-    await start_health_server()
-    # Start bot
-    await bot.astart(os.getenv("DISCORD_BOT_TOKEN"))
+    """Main entry point"""
+    try:
+        platform = "Render" if os.getenv('RENDER') else "Local"
+        logger.info(f"Starting LEEE Discord RAG Bot on {platform}...")
+        logger.info(f"Python version: {sys.version}")
+        logger.info(f"Python path: {sys.executable}")
+        logger.info(f"Working directory: {os.getcwd()}")
+        
+        # Validate configuration
+        try:
+            Config.validate()
+        except ValueError as e:
+            logger.critical(f"Configuration validation failed: {e}")
+            return
+        
+        # Start health check server
+        await start_health_server()
+        
+        # Start bot
+        logger.info("Starting Discord bot...")
+        await bot.astart(Config.DISCORD_BOT_TOKEN)
+        
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.critical(f"Fatal error: {e}", exc_info=True)
+        raise
+    finally:
+        logger.info("Bot shutdown complete")
+        # Log final metrics
+        metrics.log_summary()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

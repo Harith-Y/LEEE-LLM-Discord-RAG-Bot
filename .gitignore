@@ -3,3 +3,8 @@ __pycache__/*
 data/*
 storage/*
 venv/
+logs/
+*.log
+.document_hashes.json
+*.pyc
+.DS_Store
