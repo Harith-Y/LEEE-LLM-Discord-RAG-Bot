@@ -350,8 +350,11 @@ async def main():
             logger.critical(f"Configuration validation failed: {e}")
             return
         
-        # Start health check server
-        await start_health_server()
+        # Start health check server (non-blocking)
+        health_task = asyncio.create_task(start_health_server())
+        
+        # Give the health server a moment to start
+        await asyncio.sleep(0.5)
         
         # Start bot
         logger.info("Starting Discord bot...")
