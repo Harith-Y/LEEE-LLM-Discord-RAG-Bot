@@ -66,15 +66,16 @@ async def get_response(ctx: SlashContext, input_text: str):
     
     await ctx.send(full_response)
 
-@slash_command(name="updatedb", description="Update your information database :)")
-async def updated_database(ctx: SlashContext):
-    await ctx.defer()
-    update = await update_index()
-    if update:
-        response = f'Successfully updated database with {update} documents'
-    else:
-        response = f'Error updating index'
-    await ctx.send(response)
+# Disabled: Use update_db.py script instead
+# @slash_command(name="updatedb", description="Update your information database :)")
+# async def updated_database(ctx: SlashContext):
+#     await ctx.defer()
+#     update = await update_index()
+#     if update:
+#         response = f'Successfully updated database with {update} documents'
+#     else:
+#         response = f'Error updating index'
+#     await ctx.send(response)
 
 
 async def main():
