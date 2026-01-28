@@ -1,6 +1,7 @@
 pypdf==3.17.4
 python-dotenv==1.0.0
 llama-index-core==0.14.13
+llama-index-readers-file
 discord-py-interactions==5.11.0
 llama-index-llms-google-genai
 llama-index-llms-groq
