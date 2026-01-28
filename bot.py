@@ -82,42 +82,8 @@ rate_limiter = get_rate_limiter(
 
 # Health check server for Render/Fly.io
 async def health_check(request):
-    """Enhanced health check endpoint with system status"""
-    try:
-        # Basic health check - always return 200 if server is running
-        health_data = {
-            'status': 'healthy',
-            'platform': 'render' if os.getenv('RENDER') else 'local',
-            'bot': {
-                'connected': bot.user is not None,
-                'username': str(bot.user) if bot.user else None,
-            },
-        }
-        
-        # Add detailed stats if available (non-blocking)
-        try:
-            query_stats = await query_service.get_stats()
-            metrics_data = metrics.to_dict()
-            cache_stats = await query_service.cache_manager.get_cache_stats()
-            
-            health_data['services'] = {
-                'query_service_initialized': query_stats['initialized'],
-                'index_cached': cache_stats['index_cached'],
-            }
-            health_data['metrics'] = metrics_data
-            health_data['config'] = Config.get_summary()
-        except Exception as stats_error:
-            logger.debug(f"Could not fetch detailed stats: {stats_error}")
-            health_data['services'] = {'initializing': True}
-        
-        return web.json_response(health_data, status=200)
-        
-    except Exception as e:
-        logger.error(f"Health check error: {e}", exc_info=True)
-        return web.json_response({
-            'status': 'unhealthy',
-            'error': str(e)
-        }, status=503)
+    """Simple health check endpoint"""
+    return web.Response(text="OK", status=200)
 
 
 async def start_health_server():
@@ -129,14 +95,10 @@ async def start_health_server():
     runner = web.AppRunner(app)
     await runner.setup()
     
-    site = web.TCPSite(runner, Config.HOST, Config.PORT)
+    site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
     await site.start()
     
-    logger.info(f"Health check server running on {Config.HOST}:{Config.PORT}")
-    
-    # Keep the server running
-    while True:
-        await asyncio.sleep(3600)
+    logger.info(f"Health check server running on 0.0.0.0:{Config.PORT}")
 
 
 @listen()
@@ -145,6 +107,7 @@ async def on_ready():
     platform = "Render ☁️" if os.getenv('RENDER') else "Local 💻"
     logger.info("=" * 60)
     logger.info(f"Bot Ready on {platform}")
+    logger.info(f"Logged in as {bot.user}")
     
     # Synchronize slash commands
     logger.info("Syncing commands...")
@@ -154,24 +117,15 @@ async def on_ready():
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}", exc_info=True)
     
-    # Initialize query service (non-blocking for Render)
-    # This happens in background after bot is ready
-    asyncio.create_task(initialize_query_service())
-    
-    # Log configuration summary
-    config_summary = Config.get_summary()
-    logger.info(f"Configuration: {config_summary}")
-    logger.info("=" * 60)
-
-
-async def initialize_query_service():
-    """Initialize query service in background"""
+    # Initialize query service
     try:
         logger.info("Initializing query service...")
         await query_service.initialize()
         logger.info("Query service initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize query service: {e}", exc_info=True)
+    
+    logger.info("=" * 60)
 
 
 @listen()
@@ -354,8 +308,7 @@ async def main():
             logger.critical(f"Configuration validation failed: {e}")
             return
         
-        # Run health server and bot concurrently
-        logger.info("Starting services...")
+        # Start health check server and bot concurrently
         await asyncio.gather(
             start_health_server(),
             bot.astart(Config.DISCORD_BOT_TOKEN)
