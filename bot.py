@@ -133,6 +133,10 @@ async def start_health_server():
     await site.start()
     
     logger.info(f"Health check server running on {Config.HOST}:{Config.PORT}")
+    
+    # Keep the server running
+    while True:
+        await asyncio.sleep(3600)
 
 
 @listen()
@@ -350,15 +354,12 @@ async def main():
             logger.critical(f"Configuration validation failed: {e}")
             return
         
-        # Start health check server (non-blocking)
-        health_task = asyncio.create_task(start_health_server())
-        
-        # Give the health server a moment to start
-        await asyncio.sleep(0.5)
-        
-        # Start bot
-        logger.info("Starting Discord bot...")
-        await bot.astart(Config.DISCORD_BOT_TOKEN)
+        # Run health server and bot concurrently
+        logger.info("Starting services...")
+        await asyncio.gather(
+            start_health_server(),
+            bot.astart(Config.DISCORD_BOT_TOKEN)
+        )
         
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
