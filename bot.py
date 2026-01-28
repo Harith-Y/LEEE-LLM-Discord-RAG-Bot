@@ -84,28 +84,33 @@ rate_limiter = get_rate_limiter(
 async def health_check(request):
     """Enhanced health check endpoint with system status"""
     try:
-        # Get service stats
-        query_stats = await query_service.get_stats()
-        metrics_data = metrics.to_dict()
-        cache_stats = await query_service.cache_manager.get_cache_stats()
-        
+        # Basic health check - always return 200 if server is running
         health_data = {
-            'status': 'healthy' if query_stats['initialized'] else 'initializing',
+            'status': 'healthy',
             'platform': 'render' if os.getenv('RENDER') else 'local',
             'bot': {
                 'connected': bot.user is not None,
                 'username': str(bot.user) if bot.user else None,
             },
-            'services': {
-                'query_service_initialized': query_stats['initialized'],
-                'index_cached': cache_stats['index_cached'],
-            },
-            'metrics': metrics_data,
-            'config': Config.get_summary(),
         }
         
-        status_code = 200 if health_data['status'] == 'healthy' else 503
-        return web.json_response(health_data, status=status_code)
+        # Add detailed stats if available (non-blocking)
+        try:
+            query_stats = await query_service.get_stats()
+            metrics_data = metrics.to_dict()
+            cache_stats = await query_service.cache_manager.get_cache_stats()
+            
+            health_data['services'] = {
+                'query_service_initialized': query_stats['initialized'],
+                'index_cached': cache_stats['index_cached'],
+            }
+            health_data['metrics'] = metrics_data
+            health_data['config'] = Config.get_summary()
+        except Exception as stats_error:
+            logger.debug(f"Could not fetch detailed stats: {stats_error}")
+            health_data['services'] = {'initializing': True}
+        
+        return web.json_response(health_data, status=200)
         
     except Exception as e:
         logger.error(f"Health check error: {e}", exc_info=True)
@@ -145,18 +150,24 @@ async def on_ready():
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}", exc_info=True)
     
-    # Initialize query service
+    # Initialize query service (non-blocking for Render)
+    # This happens in background after bot is ready
+    asyncio.create_task(initialize_query_service())
+    
+    # Log configuration summary
+    config_summary = Config.get_summary()
+    logger.info(f"Configuration: {config_summary}")
+    logger.info("=" * 60)
+
+
+async def initialize_query_service():
+    """Initialize query service in background"""
     try:
         logger.info("Initializing query service...")
         await query_service.initialize()
         logger.info("Query service initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize query service: {e}", exc_info=True)
-    
-    # Log configuration summary
-    config_summary = Config.get_summary()
-    logger.info(f"Configuration: {config_summary}")
-    logger.info("=" * 60)
 
 
 @listen()
