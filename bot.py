@@ -179,84 +179,34 @@ async def get_response(ctx: SlashContext, input_text: str):
             
             # Split into multiple messages if needed (Discord limit: 2000 chars)
             if len(full_response) > 2000:
-                # Split response into chunks
                 chunks = []
+                remaining_text = full_response
                 
-                # Add query header to first chunk
-                header = f'**Query**: {input_text}\n\n'
-                current_chunk = header
-                
-                # Split response by paragraphs to avoid breaking mid-sentence
-                paragraphs = response.split('\n\n')
-                
-                for para in paragraphs:
-                    # Handle very long paragraphs that exceed limit by themselves
-                    if len(para) > 1800:
-                        # Split long paragraph into smaller pieces
-                        words = para.split(' ')
-                        temp_para = ''
-                        for word in words:
-                            if len(temp_para) + len(word) + 1 < 1800:
-                                temp_para += word + ' '
-                            else:
-                                if temp_para:
-                                    # Process this piece
-                                    if len(current_chunk) + len(temp_para) + 2 > 1900:
-                                        chunks.append(current_chunk.rstrip())
-                                        current_chunk = temp_para + '\n\n'
-                                    else:
-                                        current_chunk += temp_para + '\n\n'
-                                temp_para = word + ' '
-                        # Add remaining words
-                        if temp_para:
-                            if len(current_chunk) + len(temp_para) + 2 > 1900:
-                                chunks.append(current_chunk.rstrip())
-                                current_chunk = temp_para + '\n\n'
-                            else:
-                                current_chunk += temp_para + '\n\n'
-                    else:
-                        # Normal paragraph handling
-                        if len(current_chunk) + len(para) + 2 > 1900:
-                            chunks.append(current_chunk.rstrip())
-                            current_chunk = para + '\n\n'
-                        else:
-                            current_chunk += para + '\n\n'
-                
-                # Add remaining content
-                if current_chunk.strip():
-                    chunks.append(current_chunk.rstrip())
-                
-                # Ensure no chunk exceeds 2000 chars (final safety check)
-                safe_chunks = []
-                for chunk in chunks:
-                    if len(chunk) > 1990:
-                        # Emergency split at character level
-                        safe_chunks.append(chunk[:1990])
-                        remaining = chunk[1990:]
-                        while remaining:
-                            safe_chunks.append(remaining[:1990])
-                            remaining = remaining[1990:]
-                    else:
-                        safe_chunks.append(chunk)
+                while remaining_text:
+                    # Take up to 1990 chars (leave buffer for safety)
+                    if len(remaining_text) <= 1990:
+                        chunks.append(remaining_text)
+                        break
+                    
+                    # Find a good break point (try newline, then space)
+                    chunk = remaining_text[:1990]
+                    break_point = chunk.rfind('\n')
+                    if break_point == -1:
+                        break_point = chunk.rfind(' ')
+                    if break_point == -1:
+                        break_point = 1990  # Force break if no space found
+                    
+                    chunks.append(remaining_text[:break_point])
+                    remaining_text = remaining_text[break_point:].lstrip()
                 
                 # Send chunks
-                for i, chunk in enumerate(safe_chunks):
+                for i, chunk in enumerate(chunks):
                     if i == 0:
                         await ctx.send(chunk)
                     else:
-                        # Ensure continuation header + chunk doesn't exceed limit
-                        continuation_header = '**...continued:**\n\n'
-                        if len(continuation_header) + len(chunk) > 1990:
-                            # Split further if needed
-                            await ctx.send(f'{continuation_header}{chunk[:1950]}')
-                            remaining = chunk[1950:]
-                            while remaining:
-                                await ctx.send(remaining[:1990])
-                                remaining = remaining[1990:]
-                        else:
-                            await ctx.send(f'{continuation_header}{chunk}')
+                        await ctx.send(f'**...continued:**\n\n{chunk}')
                 
-                logger.info(f"Successfully responded to user {user_id} (split into {len(safe_chunks)} messages)")
+                logger.info(f"Successfully responded to user {user_id} (split into {len(chunks)} messages)")
             else:
                 await ctx.send(full_response)
                 logger.info(f"Successfully responded to user {user_id}")

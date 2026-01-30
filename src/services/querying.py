@@ -253,7 +253,6 @@ Instructions:
   * Online resource links (NPTEL, GeeksforGeeks, etc.) (if any)
   * Interview experiences and tips from Quora/Medium articles (if any)
 - Preserve the original formatting of links (markdown format [text](url) or plain URLs)
-- When citing specific information, mention which source it came from (e.g., "According to the LEEE Experience PDF...")
 - If multiple sources provide similar information, synthesize them into a comprehensive answer
 - If the retrieved content doesn't contain the answer, say: "I don't have specific information about this in my knowledge base. Please check the #resources channel for comprehensive LEEE information."
 
