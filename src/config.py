@@ -36,8 +36,8 @@ class Config:
     PINECONE_REGION: str = "us-east-1"
     
     # Retrieval Settings
-    SIMILARITY_TOP_K: int = 10
-    MAX_RESPONSE_LENGTH: int = 2000
+    SIMILARITY_TOP_K: int = 15  # Increased for better coverage of expanded dataset
+    MAX_RESPONSE_LENGTH: int = 2000  # Discord standard message limit
     
     # Rate Limiting
     RATE_LIMIT_MAX_REQUESTS: int = 5

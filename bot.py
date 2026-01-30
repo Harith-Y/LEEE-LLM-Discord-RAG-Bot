@@ -177,14 +177,43 @@ async def get_response(ctx: SlashContext, input_text: str):
             # Format response with query
             full_response = f'**Query**: {input_text}\n\n{response}'
             
-            # Truncate if exceeds Discord's character limit
-            if len(full_response) > Config.MAX_RESPONSE_LENGTH:
-                truncation_msg = '\n\n...[Response truncated due to length limit]'
-                max_length = Config.MAX_RESPONSE_LENGTH - len(truncation_msg)
-                full_response = full_response[:max_length] + truncation_msg
-            
-            await ctx.send(full_response)
-            logger.info(f"Successfully responded to user {user_id}")
+            # Split into multiple messages if needed (Discord limit: 2000 chars)
+            if len(full_response) > 2000:
+                # Split response into chunks
+                chunks = []
+                current_chunk = ''
+                
+                # Add query header to first chunk
+                header = f'**Query**: {input_text}\n\n'
+                current_chunk = header
+                
+                # Split response by paragraphs to avoid breaking mid-sentence
+                paragraphs = response.split('\n\n')
+                
+                for para in paragraphs:
+                    # If adding this paragraph exceeds limit, save current chunk and start new one
+                    if len(current_chunk) + len(para) + 2 > 1950:  # Leave buffer for safety
+                        if current_chunk.strip():
+                            chunks.append(current_chunk)
+                        current_chunk = para + '\n\n'
+                    else:
+                        current_chunk += para + '\n\n'
+                
+                # Add remaining content
+                if current_chunk.strip():
+                    chunks.append(current_chunk)
+                
+                # Send chunks
+                for i, chunk in enumerate(chunks):
+                    if i == 0:
+                        await ctx.send(chunk.rstrip())
+                    else:
+                        await ctx.send(f'**...continued:**\n\n{chunk.rstrip()}')
+                
+                logger.info(f"Successfully responded to user {user_id} (split into {len(chunks)} messages)")
+            else:
+                await ctx.send(full_response)
+                logger.info(f"Successfully responded to user {user_id}")
             
         except ValueError as e:
             # Validation error

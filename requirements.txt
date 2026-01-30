@@ -7,4 +7,6 @@ llama-index-llms-groq
 llama-index-llms-openrouter
 llama-index-embeddings-nvidia
 llama-index-vector-stores-pinecone
+llama-index-readers-file
+pymupdf
 aiohttp==3.9.3

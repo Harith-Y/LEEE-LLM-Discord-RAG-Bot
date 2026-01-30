@@ -22,6 +22,13 @@ from src.utils.metrics import metrics, MetricsContext
 
 logger = logging.getLogger(__name__)
 
+try:
+    from llama_index.readers.file import PDFReader
+    PDF_READER_AVAILABLE = True
+except ImportError:
+    PDF_READER_AVAILABLE = False
+    logger.warning("llama-index-readers-file not available. Using default PDF reader.")
+
 
 class EmbeddingService:
     """
@@ -232,7 +239,39 @@ class EmbeddingService:
             Number of documents processed
         """
         logger.info("Starting full index update...")
-        documents = SimpleDirectoryReader(directory_path).load_data()
+        logger.info(f"Scanning directory: {directory_path}")
+        
+        # Load documents with progress logging
+        from pathlib import Path
+        import re
+        data_path = Path(directory_path)
+        all_files = list(data_path.glob('*'))
+        logger.info(f"Found {len(all_files)} files to process")
+        
+        # Configure file extractors for better PDF parsing
+        file_extractor = None
+        if PDF_READER_AVAILABLE:
+            from llama_index.readers.file import PDFReader
+            file_extractor = {".pdf": PDFReader()}
+            logger.info("Using PyMuPDF reader for enhanced PDF processing")
+        
+        documents = SimpleDirectoryReader(
+            directory_path,
+            filename_as_id=True,
+            required_exts=[".txt", ".md", ".pdf"],
+            file_extractor=file_extractor
+        ).load_data()
+        
+        # Sanitize document IDs for Pinecone (ASCII-only, no special chars)
+        for doc in documents:
+            if doc.id_:
+                # Extract just the filename from the path
+                filename = Path(doc.id_).name
+                # Remove non-ASCII characters and special chars
+                sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+                # Add unique suffix if needed
+                doc.id_ = f"{sanitized}_{doc.hash}"
+        
         logger.info(f"Loaded {len(documents)} documents for update")
         
         # Clear all existing vectors
@@ -271,9 +310,34 @@ class EmbeddingService:
             Number of documents updated
         """
         logger.info("Starting incremental index update...")
+        from pathlib import Path
+        import re
+        
+        # Configure file extractors for better PDF parsing
+        file_extractor = None
+        if PDF_READER_AVAILABLE:
+            from llama_index.readers.file import PDFReader
+            file_extractor = {".pdf": PDFReader()}
+            logger.info("Using PyMuPDF reader for enhanced PDF processing")
         
         # Load current documents
-        documents = SimpleDirectoryReader(directory_path).load_data()
+        documents = SimpleDirectoryReader(
+            directory_path,
+            filename_as_id=True,
+            required_exts=[".txt", ".md", ".pdf"],
+            file_extractor=file_extractor
+        ).load_data()
+        
+        # Sanitize document IDs for Pinecone (ASCII-only, no special chars)
+        for doc in documents:
+            if doc.id_:
+                # Extract just the filename from the path
+                filename = Path(doc.id_).name
+                # Remove non-ASCII characters and special chars
+                sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+                # Add unique suffix if needed
+                doc.id_ = f"{sanitized}_{doc.hash}"
+        
         logger.info(f"Loaded {len(documents)} documents")
         
         # Load previous document hashes

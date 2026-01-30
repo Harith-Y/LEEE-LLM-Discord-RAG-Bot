@@ -196,8 +196,15 @@ class QueryService:
             retriever = index.as_retriever(similarity_top_k=Config.SIMILARITY_TOP_K)
             nodes = await retriever.aretrieve(input_text)
         
-        # Extract all retrieved text
-        retrieved_text = "\n\n---\n\n".join([node.text for node in nodes])
+        # Extract all retrieved text with source info
+        retrieved_chunks = []
+        source_files = set()
+        for i, node in enumerate(nodes, 1):
+            source_name = node.metadata.get('file_name', 'Unknown')
+            source_files.add(source_name)
+            retrieved_chunks.append(f"[Source {i}: {source_name}]\n{node.text}")
+        
+        retrieved_text = "\n\n---\n\n".join(retrieved_chunks)
         
         # Check if we got relevant results
         if not retrieved_text.strip():
@@ -228,7 +235,7 @@ class QueryService:
         """
         return f"""You are a helpful assistant answering questions about IIIT Hyderabad's Lateral Entry Exam (LEEE) and related academic programs.
 
-Retrieved Information:
+Retrieved Information from Knowledge Base:
 {retrieved_text}
 
 User Question: {query}
@@ -236,16 +243,21 @@ User Question: {query}
 Instructions:
 - First, check if the question is relevant to LEEE, IIIT Hyderabad, or related academic topics
 - If the question contains inappropriate language, curse words, or is completely unrelated to LEEE/IIITH, respond politely: "I'm designed to answer questions about IIIT Hyderabad's LEEE program. Please check the #resources channel for comprehensive information."
-- If relevant, use the information from the retrieved content above
-- Answer the question directly and concisely
-- List all relevant information mentioned in the retrieved information
-- Include ALL information that answers the user's question, including:
+- If relevant, use the information from the retrieved content above to provide a comprehensive answer
+- Answer the question directly and thoroughly
+- Include ALL relevant information that answers the user's question:
   * ALL URLs and links exactly as they appear in the retrieved content (if any)
   * YouTube channel names and playlists with their URLs (if any)
   * Book recommendations with purchase links (if any)
+  * Course details, syllabus information from PDFs (if any)
   * Online resource links (NPTEL, GeeksforGeeks, etc.) (if any)
+  * Interview experiences and tips from Quora/Medium articles (if any)
 - Preserve the original formatting of links (markdown format [text](url) or plain URLs)
-- If the retrieved content doesn't contain the answer, say: "I don't have specific information about this. Please check the #resources channel for comprehensive LEEE information."
+- When citing specific information, mention which source it came from (e.g., "According to the LEEE Experience PDF...")
+- If multiple sources provide similar information, synthesize them into a comprehensive answer
+- If the retrieved content doesn't contain the answer, say: "I don't have specific information about this in my knowledge base. Please check the #resources channel for comprehensive LEEE information."
+
+Provide a well-structured, informative response:
 
 Answer:"""
     
