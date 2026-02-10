@@ -43,8 +43,9 @@ class EmbeddingService:
         self.initialized = False
         self._init_lock = asyncio.Lock()
         self.document_hashes_file = Path(Config.DATA_DIR) / ".document_hashes.json"
-        self.primary_llm = None  # Groq
-        self.fallback_llm = None  # OpenRouter
+        self.primary_llm = None  # OpenRouter primary
+        self.openrouter_fallbacks = []  # List of (model_name, llm) tuples
+        self.fallback_llm = None  # Groq as final fallback
     
     async def initialize(self) -> None:
         """
@@ -96,16 +97,32 @@ class EmbeddingService:
             max_tokens=2048  # Increased token limit for complete responses
         )
         
-        # Initialize Groq as fallback if enabled and API key is available
+        # Initialize OpenRouter fallback models
+        self.openrouter_fallbacks = []
+        if Config.OPENROUTER_API_KEY and Config.OPENROUTER_FALLBACK_MODELS:
+            for model_name in Config.OPENROUTER_FALLBACK_MODELS:
+                try:
+                    logger.info(f"Initializing OpenRouter fallback: {model_name}...")
+                    fallback = OpenRouter(
+                        model=model_name,
+                        api_key=Config.OPENROUTER_API_KEY,
+                        max_tokens=2048
+                    )
+                    self.openrouter_fallbacks.append((model_name, fallback))
+                    logger.info(f"OpenRouter fallback {model_name} initialized")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize OpenRouter fallback {model_name}: {e}")
+        
+        # Initialize Groq as final fallback if enabled and API key is available
         if Config.ENABLE_GROQ_FALLBACK and Config.GROQ_API_KEY:
-            logger.info(f"Initializing Groq fallback with {Config.GROQ_MODEL}...")
+            logger.info(f"Initializing Groq (final fallback) with {Config.GROQ_MODEL}...")
             try:
                 self.fallback_llm = Groq(
                     model=Config.GROQ_MODEL,
                     api_key=Config.GROQ_API_KEY,
                     max_tokens=2048
                 )
-                logger.info("Groq fallback initialized successfully")
+                logger.info("Groq final fallback initialized successfully")
             except Exception as e:
                 logger.warning(f"Failed to initialize Groq fallback: {e}")
                 self.fallback_llm = None
@@ -151,12 +168,12 @@ class EmbeddingService:
     
     def get_llms(self) -> tuple:
         """
-        Get primary and fallback LLMs
+        Get primary, OpenRouter fallbacks, and Groq final fallback LLMs
         
         Returns:
-            Tuple of (primary_llm, fallback_llm)
+            Tuple of (primary_llm, openrouter_fallbacks, fallback_llm)
         """
-        return (self.primary_llm, self.fallback_llm)
+        return (self.primary_llm, self.openrouter_fallbacks, self.fallback_llm)
     
     async def load_index(self, directory_path: str = None) -> VectorStoreIndex:
         """

@@ -25,11 +25,16 @@ class Config:
     PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
     
     # LLM Configuration
-    OPENROUTER_MODEL: str = "google/gemini-2.0-flash-exp:free"  # OpenRouter primary (free tier)
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq fallback
+    OPENROUTER_MODEL: str = "deepseek/deepseek-r1-0528:free"  # OpenRouter primary (free tier)
+    OPENROUTER_FALLBACK_MODELS: list = [
+        "qwen/qwen3-next-80b-a3b-instruct:free",
+        "openai/gpt-oss-120b:free",
+        "mistralai/mistral-small-3.1-24b-instruct:free",
+    ]  # OpenRouter fallback models in priority order
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback
     EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
     EMBEDDING_TRUNCATE: str = "END"
-    ENABLE_GROQ_FALLBACK: bool = True  # Enable Groq fallback on rate limits
+    ENABLE_GROQ_FALLBACK: bool = True  # Enable Groq as final fallback on rate limits
     
     # Pinecone Settings
     PINECONE_INDEX_NAME: str = "leee-helpbot-nvidia-embeddings"
@@ -111,6 +116,7 @@ class Config:
         """
         return {
             'openrouter_model': cls.OPENROUTER_MODEL,
+            'openrouter_fallbacks': cls.OPENROUTER_FALLBACK_MODELS,
             'groq_model': cls.GROQ_MODEL,
             'embedding_model': cls.EMBEDDING_MODEL,
             'pinecone_index': cls.PINECONE_INDEX_NAME,
