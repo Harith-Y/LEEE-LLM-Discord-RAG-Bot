@@ -25,11 +25,11 @@ class Config:
     PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
     
     # LLM Configuration
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq primary
-    LLM_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"  # OpenRouter fallback
+    OPENROUTER_MODEL: str = "google/gemini-2.0-flash-exp:free"  # OpenRouter primary (free tier)
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq fallback
     EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
     EMBEDDING_TRUNCATE: str = "END"
-    ENABLE_OPENROUTER_FALLBACK: bool = True  # Enable OpenRouter fallback on rate limits
+    ENABLE_GROQ_FALLBACK: bool = True  # Enable Groq fallback on rate limits
     
     # Pinecone Settings
     PINECONE_INDEX_NAME: str = "leee-helpbot-nvidia-embeddings"
@@ -88,9 +88,9 @@ class Config:
             'PINECONE_API_KEY': cls.PINECONE_API_KEY,
         }
         
-        # OPENROUTER_API_KEY is optional (only needed if fallback is enabled)
-        if cls.ENABLE_OPENROUTER_FALLBACK and not cls.OPENROUTER_API_KEY:
-            logger.warning("OPENROUTER_API_KEY not set. OpenRouter fallback will be disabled.")
+        # GROQ_API_KEY is optional (only needed if fallback is enabled)
+        if cls.ENABLE_GROQ_FALLBACK and not cls.GROQ_API_KEY:
+            logger.warning("GROQ_API_KEY not set. Groq fallback will be disabled.")
         
         missing = [key for key, value in required_vars.items() if not value]
         
@@ -110,7 +110,8 @@ class Config:
             Dictionary with configuration summary
         """
         return {
-            'llm_model': cls.LLM_MODEL,
+            'openrouter_model': cls.OPENROUTER_MODEL,
+            'groq_model': cls.GROQ_MODEL,
             'embedding_model': cls.EMBEDDING_MODEL,
             'pinecone_index': cls.PINECONE_INDEX_NAME,
             'similarity_top_k': cls.SIMILARITY_TOP_K,

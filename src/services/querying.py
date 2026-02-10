@@ -215,23 +215,23 @@ class QueryService:
         # Create prompt with all retrieved content
         prompt = self._build_prompt(input_text, retrieved_text)
         
-        # Query LLM with OpenRouter fallback on rate limit
+        # Query LLM with Groq fallback on rate limit
         with MetricsContext("llm_query"):
             try:
-                # Try primary LLM (Groq)
+                # Try primary LLM (OpenRouter)
                 response = await Settings.llm.acomplete(prompt)
                 response_text = response.text
-                logger.debug(f"LLM response from Groq, length: {len(response_text)} characters")
+                logger.debug(f"LLM response from OpenRouter, length: {len(response_text)} characters")
             except RateLimitError as e:
-                logger.warning(f"Groq rate limit hit: {e}")
+                logger.warning(f"OpenRouter rate limit hit: {e}")
                 
-                # Try OpenRouter fallback if available
+                # Try Groq fallback if available
                 primary_llm, fallback_llm = self.embedding_service.get_llms()
                 
-                if fallback_llm and Config.ENABLE_OPENROUTER_FALLBACK:
-                    logger.info("Attempting fallback to OpenRouter...")
+                if fallback_llm and Config.ENABLE_GROQ_FALLBACK:
+                    logger.info("Attempting fallback to Groq...")
                     try:
-                        # Temporarily switch to OpenRouter
+                        # Temporarily switch to Groq
                         original_llm = Settings.llm
                         Settings.llm = fallback_llm
                         
@@ -241,18 +241,18 @@ class QueryService:
                         # Restore original LLM
                         Settings.llm = original_llm
                         
-                        logger.info(f"Successfully used OpenRouter fallback, response length: {len(response_text)} characters")
+                        logger.info(f"Successfully used Groq fallback, response length: {len(response_text)} characters")
                     except Exception as fallback_error:
-                        logger.error(f"OpenRouter fallback also failed: {fallback_error}")
+                        logger.error(f"Groq fallback also failed: {fallback_error}")
                         # Restore original LLM
                         Settings.llm = original_llm
                         raise Exception(
-                            "Both Groq and OpenRouter rate limits exceeded. Please try again later."
+                            "Both OpenRouter and Groq rate limits exceeded. Please try again later."
                         )
                 else:
                     logger.error("No fallback LLM available or fallback disabled")
                     raise Exception(
-                        "Groq rate limit exceeded and no fallback available. Please try again later."
+                        "OpenRouter rate limit exceeded and no fallback available. Please try again later."
                     )
         
         logger.debug(f"Final response length: {len(response_text)} characters")
