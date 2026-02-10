@@ -43,8 +43,8 @@ class EmbeddingService:
         self.initialized = False
         self._init_lock = asyncio.Lock()
         self.document_hashes_file = Path(Config.DATA_DIR) / ".document_hashes.json"
-        self.primary_llm = None  # OpenRouter
-        self.fallback_llm = None  # Groq
+        self.primary_llm = None  # Groq
+        self.fallback_llm = None  # OpenRouter
     
     async def initialize(self) -> None:
         """
@@ -89,28 +89,28 @@ class EmbeddingService:
             truncate=Config.EMBEDDING_TRUNCATE
         )
         
-        logger.info(f"Initializing OpenRouter with {Config.LLM_MODEL}...")
-        self.primary_llm = OpenRouter(
-            model=Config.LLM_MODEL,
-            api_key=Config.OPENROUTER_API_KEY,
+        logger.info(f"Initializing Groq (primary) with {Config.GROQ_MODEL}...")
+        self.primary_llm = Groq(
+            model=Config.GROQ_MODEL,
+            api_key=Config.GROQ_API_KEY,
             max_tokens=2048  # Increased token limit for complete responses
         )
         
-        # Initialize Groq as fallback if enabled and API key is available
-        if Config.ENABLE_GROQ_FALLBACK and Config.GROQ_API_KEY:
-            logger.info(f"Initializing Groq fallback with {Config.GROQ_MODEL}...")
+        # Initialize OpenRouter as fallback if enabled and API key is available
+        if Config.ENABLE_OPENROUTER_FALLBACK and Config.OPENROUTER_API_KEY:
+            logger.info(f"Initializing OpenRouter fallback with {Config.LLM_MODEL}...")
             try:
-                self.fallback_llm = Groq(
-                    model=Config.GROQ_MODEL,
-                    api_key=Config.GROQ_API_KEY,
+                self.fallback_llm = OpenRouter(
+                    model=Config.LLM_MODEL,
+                    api_key=Config.OPENROUTER_API_KEY,
                     max_tokens=2048
                 )
-                logger.info("Groq fallback initialized successfully")
+                logger.info("OpenRouter fallback initialized successfully")
             except Exception as e:
-                logger.warning(f"Failed to initialize Groq fallback: {e}")
+                logger.warning(f"Failed to initialize OpenRouter fallback: {e}")
                 self.fallback_llm = None
         else:
-            logger.info("Groq fallback disabled or API key not provided")
+            logger.info("OpenRouter fallback disabled or API key not provided")
             self.fallback_llm = None
         
         Settings.llm = self.primary_llm
