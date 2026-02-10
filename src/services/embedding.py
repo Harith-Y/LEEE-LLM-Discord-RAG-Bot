@@ -14,6 +14,7 @@ from llama_index.core.indices.vector_store import VectorStoreIndex
 from llama_index.core import StorageContext, SimpleDirectoryReader, Document
 from llama_index.vector_stores.pinecone import PineconeVectorStore
 from llama_index.llms.openrouter import OpenRouter
+from llama_index.llms.groq import Groq
 from llama_index.embeddings.nvidia import NVIDIAEmbedding
 from pinecone import Pinecone, ServerlessSpec
 
@@ -42,6 +43,8 @@ class EmbeddingService:
         self.initialized = False
         self._init_lock = asyncio.Lock()
         self.document_hashes_file = Path(Config.DATA_DIR) / ".document_hashes.json"
+        self.primary_llm = None  # OpenRouter
+        self.fallback_llm = None  # Groq
     
     async def initialize(self) -> None:
         """
@@ -87,13 +90,30 @@ class EmbeddingService:
         )
         
         logger.info(f"Initializing OpenRouter with {Config.LLM_MODEL}...")
-        llm = OpenRouter(
+        self.primary_llm = OpenRouter(
             model=Config.LLM_MODEL,
             api_key=Config.OPENROUTER_API_KEY,
             max_tokens=2048  # Increased token limit for complete responses
         )
         
-        Settings.llm = llm
+        # Initialize Groq as fallback if enabled and API key is available
+        if Config.ENABLE_GROQ_FALLBACK and Config.GROQ_API_KEY:
+            logger.info(f"Initializing Groq fallback with {Config.GROQ_MODEL}...")
+            try:
+                self.fallback_llm = Groq(
+                    model=Config.GROQ_MODEL,
+                    api_key=Config.GROQ_API_KEY,
+                    max_tokens=2048
+                )
+                logger.info("Groq fallback initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Groq fallback: {e}")
+                self.fallback_llm = None
+        else:
+            logger.info("Groq fallback disabled or API key not provided")
+            self.fallback_llm = None
+        
+        Settings.llm = self.primary_llm
         Settings.embed_model = embed_model
         logger.info("LLM and embeddings initialized successfully")
     
@@ -128,6 +148,15 @@ class EmbeddingService:
             logger.info(f"Pinecone index '{Config.PINECONE_INDEX_NAME}' already exists")
         
         self.pinecone_index = self.pc.Index(Config.PINECONE_INDEX_NAME)
+    
+    def get_llms(self) -> tuple:
+        """
+        Get primary and fallback LLMs
+        
+        Returns:
+            Tuple of (primary_llm, fallback_llm)
+        """
+        return (self.primary_llm, self.fallback_llm)
     
     async def load_index(self, directory_path: str = None) -> VectorStoreIndex:
         """

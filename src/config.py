@@ -21,12 +21,15 @@ class Config:
     # API Keys
     NVIDIA_API_KEY: Optional[str] = os.getenv("NVIDIA_API_KEY")
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
+    GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
     PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
     
     # LLM Configuration
-    LLM_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
+    LLM_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"  # OpenRouter primary
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq fallback
     EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
     EMBEDDING_TRUNCATE: str = "END"
+    ENABLE_GROQ_FALLBACK: bool = True  # Enable Groq fallback on rate limits
     
     # Pinecone Settings
     PINECONE_INDEX_NAME: str = "leee-helpbot-nvidia-embeddings"
@@ -84,6 +87,10 @@ class Config:
             'OPENROUTER_API_KEY': cls.OPENROUTER_API_KEY,
             'PINECONE_API_KEY': cls.PINECONE_API_KEY,
         }
+        
+        # GROQ_API_KEY is optional (only needed if fallback is enabled)
+        if cls.ENABLE_GROQ_FALLBACK and not cls.GROQ_API_KEY:
+            logger.warning("GROQ_API_KEY not set. Groq fallback will be disabled.")
         
         missing = [key for key, value in required_vars.items() if not value]
         
