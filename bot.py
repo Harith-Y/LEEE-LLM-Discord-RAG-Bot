@@ -181,30 +181,39 @@ async def get_response(ctx: SlashContext, input_text: str):
             if len(full_response) > 2000:
                 chunks = []
                 remaining_text = full_response
+                CONTINUATION_PREFIX = '**...continued:**\n\n'
+                PREFIX_LENGTH = len(CONTINUATION_PREFIX)
+                
+                # First chunk can be up to 1990 chars
+                is_first = True
                 
                 while remaining_text:
-                    # Take up to 1990 chars (leave buffer for safety)
-                    if len(remaining_text) <= 1990:
+                    # Adjust max length based on whether this will be a continuation
+                    max_length = 1990 if is_first else (2000 - PREFIX_LENGTH - 10)  # 1970 for continuations
+                    
+                    # If remaining text fits, take it all
+                    if len(remaining_text) <= max_length:
                         chunks.append(remaining_text)
                         break
                     
                     # Find a good break point (try newline, then space)
-                    chunk = remaining_text[:1990]
+                    chunk = remaining_text[:max_length]
                     break_point = chunk.rfind('\n')
                     if break_point == -1:
                         break_point = chunk.rfind(' ')
                     if break_point == -1:
-                        break_point = 1990  # Force break if no space found
+                        break_point = max_length  # Force break if no space found
                     
                     chunks.append(remaining_text[:break_point])
                     remaining_text = remaining_text[break_point:].lstrip()
+                    is_first = False
                 
                 # Send chunks
                 for i, chunk in enumerate(chunks):
                     if i == 0:
                         await ctx.send(chunk)
                     else:
-                        await ctx.send(f'**...continued:**\n\n{chunk}')
+                        await ctx.send(f'{CONTINUATION_PREFIX}{chunk}')
                 
                 logger.info(f"Successfully responded to user {user_id} (split into {len(chunks)} messages)")
             else:
