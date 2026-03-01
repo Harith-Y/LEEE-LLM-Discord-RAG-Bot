@@ -15,6 +15,7 @@ from src.services.embedding import get_embedding_service
 from src.utils.cache import get_cache_manager
 from src.utils.validators import create_query_validator
 from src.utils.metrics import metrics, MetricsContext
+from src.utils.discord_formatter import format_for_discord
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,8 @@ class QueryService:
                             "All OpenRouter models failed or rate limited. Please try again later."
                         )
         
+        # Post-process for Discord compatibility (tables, <br>, etc.)
+        response_text = format_for_discord(response_text)
         logger.debug(f"Final response length: {len(response_text)} characters")
         return response_text
     
@@ -301,6 +304,8 @@ Instructions:
 - Preserve the original formatting of links (markdown format [text](url) or plain URLs)
 - If multiple sources provide similar information, synthesize them into a comprehensive answer
 - If the retrieved content doesn't contain the answer, say: "I don't have specific information about this in my knowledge base. Please check the #resources channel for comprehensive LEEE information."
+- IMPORTANT: Do NOT use Markdown tables (| col | col |). Use numbered lists, bullet points, or bold headers instead.
+- IMPORTANT: Do NOT use HTML tags like <br>, <b>, <i>, etc. Use plain Markdown (newlines, **bold**, *italic*).
 
 Provide a well-structured, informative response:
 
