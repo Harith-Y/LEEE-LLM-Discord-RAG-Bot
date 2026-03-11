@@ -94,7 +94,7 @@ class EmbeddingService:
         self.primary_llm = OpenRouter(
             model=Config.OPENROUTER_MODEL,
             api_key=Config.OPENROUTER_API_KEY,
-            max_tokens=2048  # Increased token limit for complete responses
+            max_tokens=4096
         )
         
         # Initialize OpenRouter fallback models
@@ -106,7 +106,7 @@ class EmbeddingService:
                     fallback = OpenRouter(
                         model=model_name,
                         api_key=Config.OPENROUTER_API_KEY,
-                        max_tokens=2048
+                        max_tokens=4096
                     )
                     self.openrouter_fallbacks.append((model_name, fallback))
                     logger.info(f"OpenRouter fallback {model_name} initialized")
@@ -120,7 +120,7 @@ class EmbeddingService:
                 self.fallback_llm = Groq(
                     model=Config.GROQ_MODEL,
                     api_key=Config.GROQ_API_KEY,
-                    max_tokens=2048
+                    max_tokens=4096
                 )
                 logger.info("Groq final fallback initialized successfully")
             except Exception as e:

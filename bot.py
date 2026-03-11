@@ -210,10 +210,21 @@ async def get_response(ctx: SlashContext, input_text: str):
                 
                 # Send chunks
                 for i, chunk in enumerate(chunks):
-                    if i == 0:
-                        await ctx.send(chunk)
-                    else:
-                        await ctx.send(f'{CONTINUATION_PREFIX}{chunk}')
+                    content = chunk if i == 0 else f'{CONTINUATION_PREFIX}{chunk}'
+                    try:
+                        if i == 0:
+                            await ctx.send(content)
+                        else:
+                            # Use channel.send for continuations to bypass interaction token limits
+                            await ctx.channel.send(content)
+                    except Exception as chunk_err:
+                        logger.error(f"Failed to send chunk {i + 1}/{len(chunks)} for user {user_id}: {chunk_err}")
+                        # Fallback: try ctx.send if channel.send failed, or vice versa
+                        try:
+                            await ctx.send(content)
+                        except Exception:
+                            logger.error(f"Fallback send also failed for chunk {i + 1}, stopping")
+                            break
                 
                 logger.info(f"Successfully responded to user {user_id} (split into {len(chunks)} messages)")
             else:
