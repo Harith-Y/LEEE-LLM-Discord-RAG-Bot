@@ -94,7 +94,9 @@ class EmbeddingService:
         self.primary_llm = OpenRouter(
             model=Config.OPENROUTER_MODEL,
             api_key=Config.OPENROUTER_API_KEY,
-            max_tokens=4096
+            max_tokens=4096,
+            max_retries=Config.OPENROUTER_MAX_RETRIES,
+            timeout=30,
         )
         
         # Initialize OpenRouter fallback models
@@ -106,7 +108,9 @@ class EmbeddingService:
                     fallback = OpenRouter(
                         model=model_name,
                         api_key=Config.OPENROUTER_API_KEY,
-                        max_tokens=4096
+                        max_tokens=4096,
+                        max_retries=Config.OPENROUTER_MAX_RETRIES,
+                        timeout=30,
                     )
                     self.openrouter_fallbacks.append((model_name, fallback))
                     logger.info(f"OpenRouter fallback {model_name} initialized")

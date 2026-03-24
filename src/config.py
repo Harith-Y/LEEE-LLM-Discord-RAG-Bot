@@ -25,12 +25,17 @@ class Config:
     PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
     
     # LLM Configuration
-    OPENROUTER_MODEL: str = "deepseek/deepseek-r1-0528:free"  # OpenRouter primary (free tier)
+    OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"  # OpenRouter primary (free tier)
     OPENROUTER_FALLBACK_MODELS: list = [
-        "qwen/qwen3-next-80b-a3b-instruct:free",
-        "openai/gpt-oss-120b:free",
-        "mistralai/mistral-small-3.1-24b-instruct:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",   # 1. 120B MoE - high quality, different provider
+        "google/gemma-3-27b-it:free",                # 2. Solid Google model, different provider
+        "arcee-ai/trinity-large-preview:free",       # 3. 400B frontier-scale
+        "stepfun/step-3.5-flash:free",               # 4. MoE, 1M context
+        "mistralai/mistral-small-3.1-24b-instruct:free",  # 5. Reliable Mistral
+        "z-ai/glm-4.5-air:free",                    # 6. Zhipu/GLM fallback
+        "arcee-ai/trinity-mini:free",                # 7. Last resort small model
     ]  # OpenRouter fallback models in priority order
+    OPENROUTER_MAX_RETRIES: int = 1  # Fail fast per model, rely on fallback cascade instead
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback
     EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
     EMBEDDING_TRUNCATE: str = "END"
