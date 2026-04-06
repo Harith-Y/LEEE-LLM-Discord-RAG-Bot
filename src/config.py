@@ -27,13 +27,12 @@ class Config:
     # LLM Configuration
     OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"  # OpenRouter primary (free tier)
     OPENROUTER_FALLBACK_MODELS: list = [
-        "nvidia/nemotron-3-super-120b-a12b:free",   # 1. 120B MoE - high quality, different provider
-        "google/gemma-3-27b-it:free",                # 2. Solid Google model, different provider
-        "arcee-ai/trinity-large-preview:free",       # 3. 400B frontier-scale
-        "stepfun/step-3.5-flash:free",               # 4. MoE, 1M context
-        "mistralai/mistral-small-3.1-24b-instruct:free",  # 5. Reliable Mistral
-        "z-ai/glm-4.5-air:free",                    # 6. Zhipu/GLM fallback
-        "arcee-ai/trinity-mini:free",                # 7. Last resort small model
+        "google/gemma-3-27b-it:free",                # 1. Good instruction-following, Google-hosted
+        "mistralai/mistral-small-3.1-24b-instruct:free",  # 2. Reliable instruction-following
+        "stepfun/step-3.5-flash:free",               # 3. MoE, 1M context
+        "z-ai/glm-4.5-air:free",                    # 4. Zhipu/GLM fallback
+        "arcee-ai/trinity-large-preview:free",       # 5. Large but poor instruction-following
+        "arcee-ai/trinity-mini:free",                # 6. Last resort
     ]  # OpenRouter fallback models in priority order
     OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries — fallback cascade handles it
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback

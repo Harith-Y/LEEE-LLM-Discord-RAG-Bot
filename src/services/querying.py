@@ -217,25 +217,31 @@ class QueryService:
         prompt = self._build_prompt(input_text, retrieved_text)
         
         # Query LLM with cascading fallback on rate limit
+        LLM_TIMEOUT = 35  # seconds — hard cap per model attempt
+
         with MetricsContext("llm_query"):
             try:
                 # Try primary LLM (OpenRouter)
-                response = await Settings.llm.acomplete(prompt)
+                response = await asyncio.wait_for(
+                    Settings.llm.acomplete(prompt), timeout=LLM_TIMEOUT
+                )
                 response_text = response.text
                 logger.debug(f"LLM response from primary OpenRouter, length: {len(response_text)} characters")
             except (RateLimitError, Exception) as e:
                 logger.warning(f"Primary OpenRouter failed: {e}")
-                
+
                 # Get all fallback options
                 primary_llm, openrouter_fallbacks, groq_fallback = self.embedding_service.get_llms()
                 original_llm = Settings.llm
-                
+
                 # Try OpenRouter fallback models first
                 for model_name, fallback_llm in openrouter_fallbacks:
                     try:
                         logger.info(f"Attempting OpenRouter fallback: {model_name}...")
                         Settings.llm = fallback_llm
-                        response = await Settings.llm.acomplete(prompt)
+                        response = await asyncio.wait_for(
+                            Settings.llm.acomplete(prompt), timeout=LLM_TIMEOUT
+                        )
                         response_text = response.text
                         Settings.llm = original_llm
                         logger.info(f"Successfully used {model_name}, response length: {len(response_text)} characters")
@@ -250,7 +256,9 @@ class QueryService:
                         logger.info("All OpenRouter models failed. Attempting final Groq fallback...")
                         try:
                             Settings.llm = groq_fallback
-                            response = await Settings.llm.acomplete(prompt)
+                            response = await asyncio.wait_for(
+                                Settings.llm.acomplete(prompt), timeout=LLM_TIMEOUT
+                            )
                             response_text = response.text
                             Settings.llm = original_llm
                             logger.info(f"Successfully used Groq fallback, response length: {len(response_text)} characters")
