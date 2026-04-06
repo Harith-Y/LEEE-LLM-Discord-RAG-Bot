@@ -38,10 +38,26 @@ def format_for_discord(text: str) -> str:
     # 3. Strip any remaining HTML tags
     text = re.sub(r'<[^>]+>', '', text)
 
-    # 4. Collapse runs of 3+ blank lines into 2
+    # 4. Strip source citations the LLM may have included
+    text = _strip_source_citations(text)
+
+    # 5. Collapse runs of 3+ blank lines into 2
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
+
+
+def _strip_source_citations(text: str) -> str:
+    """Remove source/file citations that the LLM may include from retrieved chunks."""
+    # Remove patterns like ([Source 1](filename.md)), ([Source 12](file.md))
+    text = re.sub(r'\s*\(\[Source\s*\d+\]\([^)]*\)\)', '', text)
+    # Remove patterns like [Source 1](filename.md) standalone
+    text = re.sub(r'\[Source\s*\d+\]\([^)]*\)', '', text)
+    # Remove patterns like (Source: filename.ext) or (Source 1: filename.ext)
+    text = re.sub(r'\s*\(Source\s*\d*:\s*[^)]*\)', '', text)
+    # Remove patterns like [Source 1: filename.ext]
+    text = re.sub(r'\[Source\s*\d+:\s*[^]]*\]', '', text)
+    return text
 
 
 def _convert_tables(text: str) -> str:

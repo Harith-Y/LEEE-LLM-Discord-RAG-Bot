@@ -306,6 +306,7 @@ Instructions:
 - If the retrieved content doesn't contain the answer, say: "I don't have specific information about this in my knowledge base. Please check the #resources channel for comprehensive LEEE information."
 - IMPORTANT: Do NOT use Markdown tables (| col | col |). Use numbered lists, bullet points, or bold headers instead.
 - IMPORTANT: Do NOT use HTML tags like <br>, <b>, <i>, etc. Use plain Markdown (newlines, **bold**, *italic*).
+- IMPORTANT: Do NOT cite or reference source file names, or source numbers (e.g. [Source 1], Source: filename.md). Just present the information naturally without attribution.
 
 Provide a well-structured, informative response:
 

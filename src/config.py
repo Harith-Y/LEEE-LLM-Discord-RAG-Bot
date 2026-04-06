@@ -35,7 +35,7 @@ class Config:
         "z-ai/glm-4.5-air:free",                    # 6. Zhipu/GLM fallback
         "arcee-ai/trinity-mini:free",                # 7. Last resort small model
     ]  # OpenRouter fallback models in priority order
-    OPENROUTER_MAX_RETRIES: int = 1  # Fail fast per model, rely on fallback cascade instead
+    OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries — fallback cascade handles it
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback
     EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
     EMBEDDING_TRUNCATE: str = "END"
