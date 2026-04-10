@@ -337,6 +337,23 @@ async def show_help(ctx: SlashContext):
     await ctx.send(help_message, ephemeral=True)
 
 
+async def start_bot_with_retry():
+    """Start the bot with retry logic for transient network issues"""
+    max_retries = 5
+    retry_delay = 5
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Attempting to start bot (Attempt {attempt}/{max_retries})...")
+            await bot.astart(Config.DISCORD_BOT_TOKEN)
+            break
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(f"Failed to start bot after {max_retries} attempts: {e}")
+                raise
+            logger.warning(f"Bot start failed: {e}. Retrying in {retry_delay} seconds...")
+            await asyncio.sleep(retry_delay)
+
 async def main():
     """Main entry point"""
     try:
@@ -356,7 +373,7 @@ async def main():
         # Start health check server and bot concurrently
         await asyncio.gather(
             start_health_server(),
-            bot.astart(Config.DISCORD_BOT_TOKEN)
+            start_bot_with_retry()
         )
         
     except KeyboardInterrupt:
