@@ -25,14 +25,14 @@ class Config:
     PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
     
     # LLM Configuration
-    OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"  # OpenRouter primary (free tier)
+    OPENROUTER_MODEL: str = "minimax/minimax-m2.5:free"  # OpenRouter primary (free tier)
     OPENROUTER_FALLBACK_MODELS: list = [
         "google/gemini-2.5-flash:free",
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "google/gemini-2.0-pro-exp-02-05:free",
-        "deepseek/deepseek-r1-distill-llama-70b:free",
-        "nvidia/llama-3.1-nemotron-70b-instruct:free",
-        "qwen/qwen-2.5-coder-32b-instruct:free",
+        "google/gemma-4-31b-it:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "qwen/qwen3-next-80b-a3b-instruct:free",
     ]  # OpenRouter fallback models in priority order
     OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries — fallback cascade handles it
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback
