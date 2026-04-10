@@ -22,14 +22,15 @@ logger = logging.getLogger(__name__)
 
 # Define custom QA template
 QA_TEMPLATE = PromptTemplate(
+    "You are a helpful and knowledgeable assistant answering questions about IIIT Hyderabad's Lateral Entry Exam (LEEE) and related academic programs.\n"
     "Context information is below.\n"
     "---------------------\n"
     "{context_str}\n"
     "---------------------\n"
-    "Using ONLY the context information above, answer the question concisely. "
-    "List only the specific topics mentioned in the context. "
-    "Do NOT add any information not present in the context. "
-    "If the context doesn't answer the question, say 'No relevant information found in the documents.'\n"
+    "Using ONLY the context information above, answer the question accurately and comprehensively.\n"
+    "Provide as much relevant detail from the context as possible, formatting your answer nicely with markdown lists or bullet points where appropriate.\n"
+    "Do NOT make up any information that is not explicitly stated in the context.\n"
+    "If the context doesn't answer the question, clearly state 'No relevant information found in the documents.'\n"
     "Question: {query_str}\n"
     "Answer: "
 )
@@ -290,15 +291,10 @@ class QueryService:
         Returns:
             Complete prompt
         """
-        return f"""You are a helpful and knowledgeable assistant answering questions about IIIT Hyderabad's Lateral Entry Exam (LEEE) and related academic programs.
-
-Context Information:
----------------------
-{retrieved_text}
----------------------
-
-User Question: {query}
-
+        # Add additional instructions to the prompt dynamically here if needed or rely on QA_TEMPLATE
+        prompt = QA_TEMPLATE.format(context_str=retrieved_text, query_str=query)
+        
+        instructions = """
 Instructions for your response:
 1. ONLY answer if the question is relevant to LEEE, IIIT Hyderabad, or related academic topics. If it is completely unrelated, inappropriate, or uses curse words, output strictly: "I'm designed to answer questions about IIIT Hyderabad's LEEE program. Please check the #resources channel for comprehensive information."
 2. Base your answer primarily on the Context Information provided above.
@@ -309,9 +305,9 @@ Instructions for your response:
 7. Do NOT use Markdown tables. Use numbered lists, bullet points, or bold headers instead.
 8. Do NOT use HTML tags (like <br>, <b>, <i>, etc.). Use pure Markdown.
 9. If the Context Information does not contain the answer and you cannot answer it regarding LEEE, say: "I don't have specific information about this in my knowledge base. Please check the #resources channel for comprehensive LEEE information."
-
-Answer:"""
-    
+"""
+        return prompt + "\n" + instructions
+        
     def _get_inappropriate_response(self) -> str:
         """Get response for inappropriate queries"""
         return (

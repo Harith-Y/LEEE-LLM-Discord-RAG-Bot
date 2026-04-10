@@ -27,12 +27,12 @@ class Config:
     # LLM Configuration
     OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"  # OpenRouter primary (free tier)
     OPENROUTER_FALLBACK_MODELS: list = [
-        "google/gemma-3-27b-it:free",                # 1. Good instruction-following, Google-hosted
-        "mistralai/mistral-small-3.1-24b-instruct:free",  # 2. Reliable instruction-following
-        "stepfun/step-3.5-flash:free",               # 3. MoE, 1M context
-        "z-ai/glm-4.5-air:free",                    # 4. Zhipu/GLM fallback
-        "arcee-ai/trinity-large-preview:free",       # 5. Large but poor instruction-following
-        "arcee-ai/trinity-mini:free",                # 6. Last resort
+        "google/gemini-2.5-flash:free",
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "google/gemini-2.0-pro-exp-02-05:free",
+        "deepseek/deepseek-r1-distill-llama-70b:free",
+        "nvidia/llama-3.1-nemotron-70b-instruct:free",
+        "qwen/qwen-2.5-coder-32b-instruct:free",
     ]  # OpenRouter fallback models in priority order
     OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries — fallback cascade handles it
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback
