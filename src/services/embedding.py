@@ -17,6 +17,7 @@ from llama_index.llms.openrouter import OpenRouter
 from llama_index.llms.groq import Groq
 from llama_index.embeddings.nvidia import NVIDIAEmbedding
 from pinecone import Pinecone, ServerlessSpec
+from pinecone.exceptions.exceptions import NotFoundException
 
 from src.config import Config
 from src.utils.metrics import metrics, MetricsContext
@@ -328,13 +329,16 @@ class EmbeddingService:
         logger.info("Clearing existing vectors from Pinecone...")
         stats = self.pinecone_index.describe_index_stats()
         namespaces = list(stats.get('namespaces', {}).keys())
-        
+
         if not namespaces:
-            namespaces = ['']  # Default namespace
-        
-        for ns in namespaces:
-            self.pinecone_index.delete(delete_all=True, namespace=ns)
-        
+            logger.info("Index already empty — skipping delete")
+        else:
+            for ns in namespaces:
+                try:
+                    self.pinecone_index.delete(delete_all=True, namespace=ns)
+                except NotFoundException:
+                    logger.info(f"Namespace '{ns}' already gone, skipping...")
+
         logger.info("Existing vectors cleared. Creating fresh embeddings...")
         
         # Create fresh embeddings
