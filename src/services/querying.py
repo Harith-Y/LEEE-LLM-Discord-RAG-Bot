@@ -31,7 +31,8 @@ QA_TEMPLATE = PromptTemplate(
     "2. Base your answer primarily on the Context Information provided below.\n"
     "3. Answer the question directly, naturally, and comprehensively in an empathetic tone. "
     "Synthesize the provided information into a directly helpful response. "
-    "Be thorough — include ALL relevant details, tips, syllabus topics, dates, and resources from the context.\n"
+    "Be thorough — include ALL relevant details, tips, syllabus topics, dates, and resources from the context. "
+    "Your response should be detailed and complete, covering every relevant point found in the context. Do NOT give a brief or summarized answer.\n"
     "4. NEVER mention source names, file names, or source numbers "
     "(e.g. do NOT say \"According to [Source 1]\" or cite any filename). Just synthesize the information naturally.\n"
     "5. Retain ALL relevant information: resources, tips, syllabus topics, and exact links/URLs (do not summarize links away).\n"
@@ -231,7 +232,7 @@ class QueryService:
         prompt = self._build_prompt(input_text, retrieved_text)
         
         # Query LLM with cascading fallback on rate limit
-        LLM_TIMEOUT = 35  # seconds — hard cap per model attempt
+        LLM_TIMEOUT = 90  # seconds — free-tier models are slow; give enough time for long responses
 
         with MetricsContext("llm_query"):
             try:
