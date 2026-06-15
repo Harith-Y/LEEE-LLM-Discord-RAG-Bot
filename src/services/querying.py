@@ -8,7 +8,6 @@ import logging
 
 from llama_index.core.settings import Settings
 from llama_index.core.prompts import PromptTemplate
-from openai import RateLimitError
 
 from src.config import Config
 from src.services.embedding import get_embedding_service
@@ -231,64 +230,42 @@ class QueryService:
         # Create prompt with all retrieved content
         prompt = self._build_prompt(input_text, retrieved_text)
         
-        # Query LLM with cascading fallback on rate limit
+        # Query the multi-provider LLM cascade. Models are tried in the order
+        # built from Config.PROVIDER_ORDER; the first to respond wins.
         LLM_TIMEOUT = 90  # seconds — free-tier models are slow; give enough time for long responses
 
         with MetricsContext("llm_query"):
-            try:
-                # Try primary LLM (OpenRouter)
-                response = await asyncio.wait_for(
-                    Settings.llm.acomplete(prompt), timeout=LLM_TIMEOUT
+            llm_chain = self.embedding_service.get_llm_chain()
+            original_llm = Settings.llm
+            response_text = None
+            last_error = None
+
+            for provider, model_name, llm in llm_chain:
+                try:
+                    logger.info(f"Attempting {provider} model: {model_name}...")
+                    Settings.llm = llm
+                    response = await asyncio.wait_for(
+                        llm.acomplete(prompt), timeout=LLM_TIMEOUT
+                    )
+                    response_text = response.text
+                    logger.info(
+                        f"Successfully used {provider}:{model_name}, "
+                        f"response length: {len(response_text)} characters"
+                    )
+                    break  # Success, exit cascade
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"{provider} model '{model_name}' failed: {e}")
+                    continue  # Try next model in the cascade
+                finally:
+                    Settings.llm = original_llm
+
+            if response_text is None:
+                logger.error(f"All {len(llm_chain)} models in the LLM cascade failed. Last error: {last_error}")
+                raise Exception(
+                    "All LLM providers failed or rate limited. Please try again later."
                 )
-                response_text = response.text
-                logger.debug(f"LLM response from primary OpenRouter, length: {len(response_text)} characters")
-            except (RateLimitError, Exception) as e:
-                logger.warning(f"Primary OpenRouter failed: {e}")
 
-                # Get all fallback options
-                primary_llm, openrouter_fallbacks, groq_fallback = self.embedding_service.get_llms()
-                original_llm = Settings.llm
-
-                # Try OpenRouter fallback models first
-                for model_name, fallback_llm in openrouter_fallbacks:
-                    try:
-                        logger.info(f"Attempting OpenRouter fallback: {model_name}...")
-                        Settings.llm = fallback_llm
-                        response = await asyncio.wait_for(
-                            Settings.llm.acomplete(prompt), timeout=LLM_TIMEOUT
-                        )
-                        response_text = response.text
-                        Settings.llm = original_llm
-                        logger.info(f"Successfully used {model_name}, response length: {len(response_text)} characters")
-                        break  # Success, exit loop
-                    except Exception as fallback_error:
-                        logger.warning(f"OpenRouter fallback {model_name} failed: {fallback_error}")
-                        Settings.llm = original_llm
-                        continue  # Try next fallback
-                else:
-                    # All OpenRouter models failed, try Groq as final fallback
-                    if groq_fallback and Config.ENABLE_GROQ_FALLBACK:
-                        logger.info("All OpenRouter models failed. Attempting final Groq fallback...")
-                        try:
-                            Settings.llm = groq_fallback
-                            response = await asyncio.wait_for(
-                                Settings.llm.acomplete(prompt), timeout=LLM_TIMEOUT
-                            )
-                            response_text = response.text
-                            Settings.llm = original_llm
-                            logger.info(f"Successfully used Groq fallback, response length: {len(response_text)} characters")
-                        except Exception as groq_error:
-                            logger.error(f"Groq fallback also failed: {groq_error}")
-                            Settings.llm = original_llm
-                            raise Exception(
-                                "All LLM providers (OpenRouter + Groq) failed or rate limited. Please try again later."
-                            )
-                    else:
-                        logger.error("All OpenRouter fallbacks exhausted and no Groq fallback available")
-                        raise Exception(
-                            "All OpenRouter models failed or rate limited. Please try again later."
-                        )
-        
         # Post-process for Discord compatibility (tables, <br>, etc.)
         response_text = format_for_discord(response_text)
         logger.debug(f"Final response length: {len(response_text)} characters")

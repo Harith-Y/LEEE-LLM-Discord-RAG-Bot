@@ -15,6 +15,7 @@ from llama_index.core import StorageContext, SimpleDirectoryReader, Document
 from llama_index.vector_stores.pinecone import PineconeVectorStore
 from llama_index.llms.openrouter import OpenRouter
 from llama_index.llms.groq import Groq
+from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.embeddings.nvidia import NVIDIAEmbedding
 from pinecone import Pinecone, ServerlessSpec
 from pinecone.exceptions.exceptions import NotFoundException
@@ -44,9 +45,9 @@ class EmbeddingService:
         self.initialized = False
         self._init_lock = asyncio.Lock()
         self.document_hashes_file = Path(Config.DATA_DIR) / ".document_hashes.json"
-        self.primary_llm = None  # OpenRouter primary
-        self.openrouter_fallbacks = []  # List of (model_name, llm) tuples
-        self.fallback_llm = None  # Groq as final fallback
+        # Ordered LLM cascade: list of (provider, model_name, llm) tuples.
+        # Built from Config.PROVIDER_ORDER and tried in order at query time.
+        self.llm_chain: List[tuple] = []
     
     async def initialize(self) -> None:
         """
@@ -83,61 +84,77 @@ class EmbeddingService:
                         raise
     
     async def _initialize_llm(self) -> None:
-        """Initialize LLM and embedding model"""
+        """Initialize the embedding model and the multi-provider LLM cascade"""
         logger.info(f"Initializing NVIDIA embeddings with {Config.EMBEDDING_MODEL}...")
         embed_model = NVIDIAEmbedding(
             model=Config.EMBEDDING_MODEL,
             api_key=Config.NVIDIA_API_KEY,
             truncate=Config.EMBEDDING_TRUNCATE
         )
-        
-        logger.info(f"Initializing OpenRouter (primary) with {Config.OPENROUTER_MODEL}...")
-        self.primary_llm = OpenRouter(
-            model=Config.OPENROUTER_MODEL,
-            api_key=Config.OPENROUTER_API_KEY,
-            max_tokens=4096,
-            max_retries=Config.OPENROUTER_MAX_RETRIES,
-            timeout=30,
-        )
-        
-        # Initialize OpenRouter fallback models
-        self.openrouter_fallbacks = []
-        if Config.OPENROUTER_API_KEY and Config.OPENROUTER_FALLBACK_MODELS:
-            for model_name in Config.OPENROUTER_FALLBACK_MODELS:
-                try:
-                    logger.info(f"Initializing OpenRouter fallback: {model_name}...")
-                    fallback = OpenRouter(
-                        model=model_name,
-                        api_key=Config.OPENROUTER_API_KEY,
-                        max_tokens=4096,
-                        max_retries=Config.OPENROUTER_MAX_RETRIES,
-                        timeout=30,
-                    )
-                    self.openrouter_fallbacks.append((model_name, fallback))
-                    logger.info(f"OpenRouter fallback {model_name} initialized")
-                except Exception as e:
-                    logger.warning(f"Failed to initialize OpenRouter fallback {model_name}: {e}")
-        
-        # Initialize Groq as final fallback if enabled and API key is available
-        if Config.ENABLE_GROQ_FALLBACK and Config.GROQ_API_KEY:
-            logger.info(f"Initializing Groq (final fallback) with {Config.GROQ_MODEL}...")
-            try:
-                self.fallback_llm = Groq(
-                    model=Config.GROQ_MODEL,
-                    api_key=Config.GROQ_API_KEY,
-                    max_tokens=4096
-                )
-                logger.info("Groq final fallback initialized successfully")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Groq fallback: {e}")
-                self.fallback_llm = None
-        else:
-            logger.info("OpenRouter fallback disabled or API key not provided")
-            self.fallback_llm = None
-        
-        Settings.llm = self.primary_llm
+
+        # Build the ordered LLM cascade from Config.PROVIDER_ORDER. Each provider
+        # contributes its models (in list order); a provider is skipped if its API
+        # key is missing. The first model is also set as Settings.llm.
+        self.llm_chain = []
+        for provider in Config.PROVIDER_ORDER:
+            self._add_provider_to_chain(provider)
+
+        if not self.llm_chain:
+            raise RuntimeError(
+                "No LLM providers could be initialized. Check PROVIDER_ORDER and that "
+                "at least one provider's API key is set."
+            )
+
+        Settings.llm = self.llm_chain[0][2]
         Settings.embed_model = embed_model
-        logger.info("LLM and embeddings initialized successfully")
+        chain_desc = ", ".join(f"{p}:{m}" for p, m, _ in self.llm_chain)
+        logger.info(f"LLM cascade initialized ({len(self.llm_chain)} models): {chain_desc}")
+
+    def _add_provider_to_chain(self, provider: str) -> None:
+        """Instantiate all models for a provider and append them to the cascade"""
+        if provider == "groq":
+            if not Config.GROQ_API_KEY:
+                logger.warning("Skipping 'groq' provider: GROQ_API_KEY not set")
+                return
+            for model_name in Config.GROQ_MODELS:
+                self._append_llm("groq", model_name, lambda m=model_name: Groq(
+                    model=m,
+                    api_key=Config.GROQ_API_KEY,
+                    max_tokens=4096,
+                ))
+        elif provider == "google":
+            if not Config.GOOGLE_API_KEY:
+                logger.warning("Skipping 'google' provider: GOOGLE_API_KEY not set")
+                return
+            for model_name in Config.GOOGLE_MODELS:
+                self._append_llm("google", model_name, lambda m=model_name: GoogleGenAI(
+                    model=m,
+                    api_key=Config.GOOGLE_API_KEY,
+                    max_tokens=4096,
+                ))
+        elif provider == "openrouter":
+            if not Config.OPENROUTER_API_KEY:
+                logger.warning("Skipping 'openrouter' provider: OPENROUTER_API_KEY not set")
+                return
+            models = [Config.OPENROUTER_MODEL] + list(Config.OPENROUTER_FALLBACK_MODELS)
+            for model_name in models:
+                self._append_llm("openrouter", model_name, lambda m=model_name: OpenRouter(
+                    model=m,
+                    api_key=Config.OPENROUTER_API_KEY,
+                    max_tokens=4096,
+                    max_retries=Config.OPENROUTER_MAX_RETRIES,
+                    timeout=30,
+                ))
+        else:
+            logger.warning(f"Unknown provider '{provider}' in PROVIDER_ORDER — skipping")
+
+    def _append_llm(self, provider: str, model_name: str, factory) -> None:
+        """Construct one LLM via factory and append it to the cascade, logging failures"""
+        try:
+            self.llm_chain.append((provider, model_name, factory()))
+            logger.info(f"Initialized {provider} model: {model_name}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize {provider} model '{model_name}': {e}")
     
     async def _initialize_pinecone(self) -> None:
         """Initialize Pinecone connection and index"""
@@ -171,14 +188,14 @@ class EmbeddingService:
         
         self.pinecone_index = self.pc.Index(Config.PINECONE_INDEX_NAME)
     
-    def get_llms(self) -> tuple:
+    def get_llm_chain(self) -> List[tuple]:
         """
-        Get primary, OpenRouter fallbacks, and Groq final fallback LLMs
-        
+        Get the ordered multi-provider LLM cascade
+
         Returns:
-            Tuple of (primary_llm, openrouter_fallbacks, fallback_llm)
+            List of (provider, model_name, llm) tuples in fallback order
         """
-        return (self.primary_llm, self.openrouter_fallbacks, self.fallback_llm)
+        return self.llm_chain
     
     async def load_index(self, directory_path: str = None) -> VectorStoreIndex:
         """
@@ -209,7 +226,10 @@ class EmbeddingService:
                 
                 if stats['total_vector_count'] > 0:
                     logger.info(f"Loading existing index from Pinecone ({stats['total_vector_count']} vectors)...")
-                    vector_store = PineconeVectorStore(pinecone_index=self.pinecone_index)
+                    vector_store = PineconeVectorStore(
+                        pinecone_index=self.pinecone_index,
+                        namespace=Config.PINECONE_NAMESPACE,
+                    )
                     index = VectorStoreIndex.from_vector_store(vector_store)
                     logger.info("Index loaded from Pinecone (no re-embedding needed)")
                 else:
@@ -234,7 +254,10 @@ class EmbeddingService:
         Returns:
             VectorStoreIndex instance
         """
-        vector_store = PineconeVectorStore(pinecone_index=self.pinecone_index)
+        vector_store = PineconeVectorStore(
+            pinecone_index=self.pinecone_index,
+            namespace=Config.PINECONE_NAMESPACE,
+        )
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
         
         # Run in executor to avoid blocking
@@ -325,19 +348,20 @@ class EmbeddingService:
         
         logger.info(f"Loaded {len(documents)} documents for update")
         
-        # Clear all existing vectors
-        logger.info("Clearing existing vectors from Pinecone...")
+        # Clear existing vectors from THIS bot's namespace only. Other namespaces
+        # (e.g. "leee-vercel", owned by another bot) are deliberately left untouched.
+        target_ns = Config.PINECONE_NAMESPACE
+        logger.info(f"Clearing existing vectors from namespace '{target_ns or '(default)'}'...")
         stats = self.pinecone_index.describe_index_stats()
-        namespaces = list(stats.get('namespaces', {}).keys())
+        namespaces = stats.get('namespaces', {})
 
-        if not namespaces:
-            logger.info("Index already empty — skipping delete")
+        if target_ns not in namespaces:
+            logger.info(f"Namespace '{target_ns or '(default)'}' already empty — skipping delete")
         else:
-            for ns in namespaces:
-                try:
-                    self.pinecone_index.delete(delete_all=True, namespace=ns)
-                except NotFoundException:
-                    logger.info(f"Namespace '{ns}' already gone, skipping...")
+            try:
+                self.pinecone_index.delete(delete_all=True, namespace=target_ns)
+            except NotFoundException:
+                logger.info(f"Namespace '{target_ns or '(default)'}' already gone, skipping...")
 
         logger.info("Existing vectors cleared. Creating fresh embeddings...")
         
@@ -429,7 +453,10 @@ class EmbeddingService:
         # Update changed documents
         if changed_docs:
             logger.info(f"Updating {len(changed_docs)} changed/new documents...")
-            vector_store = PineconeVectorStore(pinecone_index=self.pinecone_index)
+            vector_store = PineconeVectorStore(
+                pinecone_index=self.pinecone_index,
+                namespace=Config.PINECONE_NAMESPACE,
+            )
             index = VectorStoreIndex.from_vector_store(vector_store)
             
             # Add new documents to index

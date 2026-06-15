@@ -22,26 +22,55 @@ class Config:
     NVIDIA_API_KEY: Optional[str] = os.getenv("NVIDIA_API_KEY")
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
     GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
+    GOOGLE_API_KEY: Optional[str] = os.getenv("GOOGLE_API_KEY")
     PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
-    
-    # LLM Configuration
-    OPENROUTER_MODEL: str = "minimax/minimax-m2.5:free"  # OpenRouter primary (free tier)
+
+    # ------------------------------------------------------------------
+    # LLM Configuration - multi-provider cascade
+    #
+    # Providers are tried in PROVIDER_ORDER. Within each provider, its models
+    # are tried in list order. The first model that returns a response wins.
+    # A provider is skipped entirely if its API key is missing.
+    # ------------------------------------------------------------------
+    PROVIDER_ORDER: list = ["groq", "google", "openrouter"]
+
+    # Groq models (native Groq API) - requires GROQ_API_KEY
+    GROQ_MODELS: list = [
+        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3-32b",
+        "llama-3.1-8b-instant",
+    ]
+
+    # Google Gemini models (native Google AI API) - requires GOOGLE_API_KEY
+    GOOGLE_MODELS: list = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+    ]
+
+    # OpenRouter models - requires OPENROUTER_API_KEY. OPENROUTER_MODEL is tried
+    # first, then OPENROUTER_FALLBACK_MODELS in order.
+    OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
     OPENROUTER_FALLBACK_MODELS: list = [
-        "google/gemini-2.5-flash:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
         "google/gemma-4-31b-it:free",
         "google/gemma-4-26b-a4b-it:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "qwen/qwen3-next-80b-a3b-instruct:free",
-    ]  # OpenRouter fallback models in priority order
-    OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries — fallback cascade handles it
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq final fallback
+        "nex-agi/nex-n2-pro:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    ]
+    OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries - cascade handles it
+
     EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
     EMBEDDING_TRUNCATE: str = "END"
-    ENABLE_GROQ_FALLBACK: bool = True  # Enable Groq as final fallback on rate limits
     
     # Pinecone Settings
     PINECONE_INDEX_NAME: str = "leee-helpbot-nvidia-embeddings"
+    # Namespace this bot owns. All upsert/update/delete operations are scoped to
+    # this namespace ONLY. The default Pinecone namespace ("") is where this bot's
+    # data lives; other namespaces (e.g. "leee-vercel", used by another bot) are
+    # never modified.
+    PINECONE_NAMESPACE: str = os.getenv("PINECONE_NAMESPACE", "")
     PINECONE_DIMENSION: int = 1024  # NVIDIA nv-embedqa-e5-v5 dimension
     PINECONE_METRIC: str = "cosine"
     PINECONE_CLOUD: str = "aws"
@@ -96,10 +125,15 @@ class Config:
             'OPENROUTER_API_KEY': cls.OPENROUTER_API_KEY,
             'PINECONE_API_KEY': cls.PINECONE_API_KEY,
         }
-        
-        # GROQ_API_KEY is optional (only needed if fallback is enabled)
-        if cls.ENABLE_GROQ_FALLBACK and not cls.GROQ_API_KEY:
-            logger.warning("GROQ_API_KEY not set. Groq fallback will be disabled.")
+
+        # Provider keys are optional; a provider in PROVIDER_ORDER is skipped if
+        # its key is missing. Warn so misconfiguration is visible.
+        provider_keys = {'groq': cls.GROQ_API_KEY, 'google': cls.GOOGLE_API_KEY}
+        for provider in cls.PROVIDER_ORDER:
+            if provider in provider_keys and not provider_keys[provider]:
+                logger.warning(
+                    f"{provider.upper()}_API_KEY not set. '{provider}' provider will be skipped in the cascade."
+                )
         
         missing = [key for key, value in required_vars.items() if not value]
         
@@ -119,9 +153,11 @@ class Config:
             Dictionary with configuration summary
         """
         return {
+            'provider_order': cls.PROVIDER_ORDER,
+            'groq_models': cls.GROQ_MODELS,
+            'google_models': cls.GOOGLE_MODELS,
             'openrouter_model': cls.OPENROUTER_MODEL,
             'openrouter_fallbacks': cls.OPENROUTER_FALLBACK_MODELS,
-            'groq_model': cls.GROQ_MODEL,
             'embedding_model': cls.EMBEDDING_MODEL,
             'pinecone_index': cls.PINECONE_INDEX_NAME,
             'similarity_top_k': cls.SIMILARITY_TOP_K,
