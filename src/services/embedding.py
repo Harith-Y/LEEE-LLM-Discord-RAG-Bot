@@ -17,7 +17,11 @@ from llama_index.llms.openrouter import OpenRouter
 from llama_index.llms.groq import Groq
 from llama_index.llms.google_genai import GoogleGenAI
 from pinecone import Pinecone, ServerlessSpec
-from pinecone.exceptions.exceptions import NotFoundException
+try:
+    # Current pinecone SDK (v3+): exceptions live in the pinecone.exceptions module.
+    from pinecone.exceptions import NotFoundException
+except ImportError:  # pragma: no cover - very old SDK layout
+    from pinecone.exceptions.exceptions import NotFoundException
 
 from src.config import Config
 from src.services.nvidia_embedding import NVIDIANemoRetrieverEmbedding
