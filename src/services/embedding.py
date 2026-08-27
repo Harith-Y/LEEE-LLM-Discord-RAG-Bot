@@ -16,11 +16,11 @@ from llama_index.vector_stores.pinecone import PineconeVectorStore
 from llama_index.llms.openrouter import OpenRouter
 from llama_index.llms.groq import Groq
 from llama_index.llms.google_genai import GoogleGenAI
-from llama_index.embeddings.nvidia import NVIDIAEmbedding
 from pinecone import Pinecone, ServerlessSpec
 from pinecone.exceptions.exceptions import NotFoundException
 
 from src.config import Config
+from src.services.nvidia_embedding import NVIDIANemoRetrieverEmbedding
 from src.utils.metrics import metrics, MetricsContext
 
 logger = logging.getLogger(__name__)
@@ -86,10 +86,11 @@ class EmbeddingService:
     async def _initialize_llm(self) -> None:
         """Initialize the embedding model and the multi-provider LLM cascade"""
         logger.info(f"Initializing NVIDIA embeddings with {Config.EMBEDDING_MODEL}...")
-        embed_model = NVIDIAEmbedding(
+        embed_model = NVIDIANemoRetrieverEmbedding(
             model=Config.EMBEDDING_MODEL,
             api_key=Config.NVIDIA_API_KEY,
-            truncate=Config.EMBEDDING_TRUNCATE
+            truncate=Config.EMBEDDING_TRUNCATE,
+            dimensions=Config.EMBEDDING_DIMENSIONS,
         )
 
         # Build the ordered LLM cascade from Config.PROVIDER_ORDER. Each provider

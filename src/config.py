@@ -61,8 +61,14 @@ class Config:
     ]
     OPENROUTER_MAX_RETRIES: int = 0  # No client-level retries - cascade handles it
 
-    EMBEDDING_MODEL: str = "nvidia/nv-embedqa-e5-v5"
+    # nv-embedqa-e5-v5 was retired by NVIDIA on 2026-08-25 (and its successor
+    # llama-3.2-nv-embedqa-1b-v2 is also EOL). llama-nemotron-embed-vl-1b-v2 is the
+    # hosted replacement that still answers; it needs the NVIDIANemoRetrieverEmbedding
+    # adapter (modality param) and supports Matryoshka output, so we request 1024 dims
+    # to stay compatible with the existing Pinecone index (see PINECONE_DIMENSION).
+    EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2"
     EMBEDDING_TRUNCATE: str = "END"
+    EMBEDDING_DIMENSIONS: int = 1024  # Matryoshka output size; must equal PINECONE_DIMENSION
     
     # Pinecone Settings
     PINECONE_INDEX_NAME: str = "leee-helpbot-nvidia-embeddings"
@@ -71,7 +77,7 @@ class Config:
     # data lives; other namespaces (e.g. "leee-vercel", used by another bot) are
     # never modified.
     PINECONE_NAMESPACE: str = os.getenv("PINECONE_NAMESPACE", "")
-    PINECONE_DIMENSION: int = 1024  # NVIDIA nv-embedqa-e5-v5 dimension
+    PINECONE_DIMENSION: int = 1024  # llama-nemotron-embed-vl-1b-v2 output (Matryoshka-truncated)
     PINECONE_METRIC: str = "cosine"
     PINECONE_CLOUD: str = "aws"
     PINECONE_REGION: str = "us-east-1"
