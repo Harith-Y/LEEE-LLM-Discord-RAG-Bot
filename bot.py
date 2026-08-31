@@ -15,6 +15,7 @@ from src.config import Config
 from src.utils.metrics import metrics
 from src.utils.rate_limiter import get_rate_limiter
 from src.services.querying import get_query_service
+from src.services.summarization import get_summarization_service, ChatMessage
 
 # Load environment variables
 load_dotenv()
@@ -74,10 +75,15 @@ bot = Client(intents=Intents.DEFAULT | Intents.GUILD_MESSAGES | Intents.MESSAGE_
 
 # Initialize services
 query_service = get_query_service()
+summarization_service = get_summarization_service()
 rate_limiter = get_rate_limiter(
     max_requests=Config.RATE_LIMIT_MAX_REQUESTS,
     window_seconds=Config.RATE_LIMIT_WINDOW_SECONDS
 )
+
+# Bounds for the /summarize command's message count
+SUMMARIZE_MIN_MESSAGES = 1
+SUMMARIZE_MAX_MESSAGES = 200
 
 
 # Health check server for Render/Fly.io
@@ -133,6 +139,55 @@ async def on_message_create(event):
     """Message creation event handler for logging"""
     if event.message.content and not event.message.author.bot:
         logger.debug(f"Message from {event.message.author}: {event.message.content[:100]}")
+
+
+async def send_long_response(ctx: SlashContext, text: str) -> None:
+    """
+    Send text to the channel, splitting into <=2000 char messages on word/newline
+    boundaries. The first chunk goes through the interaction response; later chunks
+    fall back to channel.send to bypass interaction-token limits.
+    """
+    if len(text) <= 2000:
+        await ctx.send(text)
+        return
+
+    CONTINUATION_PREFIX = '**...continued:**\n\n'
+    PREFIX_LENGTH = len(CONTINUATION_PREFIX)
+
+    chunks = []
+    remaining_text = text
+    is_first = True
+    while remaining_text:
+        max_length = 1990 if is_first else (2000 - PREFIX_LENGTH - 10)
+        if len(remaining_text) <= max_length:
+            chunks.append(remaining_text)
+            break
+
+        chunk = remaining_text[:max_length]
+        break_point = chunk.rfind('\n')
+        if break_point == -1:
+            break_point = chunk.rfind(' ')
+        if break_point == -1:
+            break_point = max_length
+
+        chunks.append(remaining_text[:break_point])
+        remaining_text = remaining_text[break_point:].lstrip()
+        is_first = False
+
+    for i, chunk in enumerate(chunks):
+        content = chunk if i == 0 else f'{CONTINUATION_PREFIX}{chunk}'
+        try:
+            if i == 0:
+                await ctx.send(content)
+            else:
+                await ctx.channel.send(content)
+        except Exception as chunk_err:
+            logger.error(f"Failed to send chunk {i + 1}/{len(chunks)}: {chunk_err}")
+            try:
+                await ctx.send(content)
+            except Exception:
+                logger.error(f"Fallback send also failed for chunk {i + 1}, stopping")
+                break
 
 
 @slash_command(name="query", description="Ask a question about IIIT Hyderabad's LEEE program")
@@ -258,6 +313,136 @@ async def get_response(ctx: SlashContext, input_text: str):
             pass  # Failed to send error message
 
 
+@slash_command(
+    name="summarize",
+    description="Summarize the last X messages in this channel",
+)
+@slash_option(
+    name="count",
+    description=f"How many recent messages to summarize ({SUMMARIZE_MIN_MESSAGES}-{SUMMARIZE_MAX_MESSAGES})",
+    required=True,
+    opt_type=OptionType.INTEGER,
+    min_value=SUMMARIZE_MIN_MESSAGES,
+    max_value=SUMMARIZE_MAX_MESSAGES,
+)
+async def summarize_channel(ctx: SlashContext, count: int):
+    """
+    Summarize the most recent `count` messages in the channel the command was
+    invoked in, using the shared multi-provider LLM cascade.
+
+    Args:
+        ctx: Slash command context
+        count: Number of recent messages to include
+    """
+    user_id = str(ctx.author.id)
+    logger.info(
+        f"Summarize from user {user_id} ({ctx.author}): count={count} "
+        f"channel={ctx.channel_id}"
+    )
+
+    # Defer since fetching history + LLM call takes time
+    await ctx.defer()
+
+    try:
+        # Rate limiting check (shared budget with /query)
+        is_allowed, seconds_until_reset = await rate_limiter.is_allowed(user_id)
+        if not is_allowed:
+            error_msg = (
+                f"⏱️ Rate limit exceeded! Please wait {seconds_until_reset} seconds "
+                f"before trying again.\n\n"
+                f"You can make {Config.RATE_LIMIT_MAX_REQUESTS} requests every "
+                f"{Config.RATE_LIMIT_WINDOW_SECONDS} seconds."
+            )
+            logger.warning(f"Rate limit exceeded for user {user_id}")
+            await ctx.send(error_msg, ephemeral=True)
+            return
+
+        channel = ctx.channel
+        if channel is None:
+            # Cache may be cold (e.g. just after a restart) — fetch it directly.
+            try:
+                channel = await bot.fetch_channel(ctx.channel_id)
+            except Exception:
+                channel = None
+        if channel is None or not hasattr(channel, "history"):
+            await ctx.send(
+                "❌ I can't access this channel's history.", ephemeral=True
+            )
+            return
+
+        # Fetch recent messages (newest-first), then reverse to chronological order
+        try:
+            raw_messages = await channel.history(limit=count).flatten()
+        except Exception as e:
+            logger.error(
+                f"Failed to fetch history in channel {ctx.channel_id}: {e}",
+                exc_info=True,
+            )
+            await ctx.send(
+                "❌ I couldn't read the message history here. Make sure I have the "
+                "**Read Message History** permission in this channel.",
+                ephemeral=True,
+            )
+            return
+
+        # Keep only human messages that carry readable text
+        messages = []
+        for msg in reversed(raw_messages):
+            if msg.author.bot:
+                continue
+            content = (msg.content or "").strip()
+            if not content:
+                continue
+            timestamp = msg.created_at.strftime("%H:%M") if msg.created_at else "??:??"
+            author = getattr(msg.author, "display_name", None) or msg.author.username
+            messages.append(
+                ChatMessage(author=author, content=content, timestamp=timestamp)
+            )
+
+        if not messages:
+            await ctx.send(
+                "There are no readable text messages in that range to summarize "
+                "(bot messages and empty messages are skipped).",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            summary = await summarization_service.summarize(messages)
+        except Exception as e:
+            logger.error(
+                f"Summarization failed for user {user_id}: {e}", exc_info=True
+            )
+            await ctx.send(
+                "❌ Sorry, I couldn't generate a summary right now. "
+                "Please try again later.",
+                ephemeral=True,
+            )
+            return
+
+        header = (
+            f"📝 **Summary of the last {count} message(s)** "
+            f"({len(messages)} with text content)\n\n"
+        )
+        await send_long_response(ctx, header + summary)
+        logger.info(
+            f"Summarized {len(messages)} messages for user {user_id}"
+        )
+
+    except Exception as e:
+        logger.critical(
+            f"Unexpected error in summarize handler for user {user_id}: {e}",
+            exc_info=True,
+        )
+        try:
+            await ctx.send(
+                "❌ An unexpected error occurred. Please try again later.",
+                ephemeral=True,
+            )
+        except Exception:
+            pass
+
+
 @slash_command(name="stats", description="View bot statistics and health")
 async def show_stats(ctx: SlashContext):
     """
@@ -316,6 +501,7 @@ async def show_help(ctx: SlashContext):
     
     **Available Commands:**
     • `/query <question>` - Ask a question about LEEE
+    • `/summarize <count>` - Summarize the last <count> messages in this channel
     • `/stats` - View bot statistics
     • `/help` - Show this help message
     
