@@ -70,8 +70,14 @@ def setup_logging():
 
 logger = setup_logging()
 
-# Initialize bot
-bot = Client(intents=Intents.DEFAULT | Intents.GUILD_MESSAGES | Intents.MESSAGE_CONTENT)
+# Initialize bot. If DISCORD_DEV_GUILD_ID is set, all slash commands are registered
+# to that guild (instant updates) instead of globally (which can lag up to ~1 hour).
+_client_kwargs = {
+    "intents": Intents.DEFAULT | Intents.GUILD_MESSAGES | Intents.MESSAGE_CONTENT,
+}
+if Config.DISCORD_DEV_GUILD_ID:
+    _client_kwargs["debug_scope"] = int(Config.DISCORD_DEV_GUILD_ID)
+bot = Client(**_client_kwargs)
 
 # Initialize services
 query_service = get_query_service()
@@ -116,10 +122,16 @@ async def on_ready():
     logger.info(f"Logged in as {bot.user}")
     
     # Synchronize slash commands
-    logger.info("Syncing commands...")
+    scope_desc = (
+        f"guild {Config.DISCORD_DEV_GUILD_ID} (instant)"
+        if Config.DISCORD_DEV_GUILD_ID
+        else "global (may take up to ~1h to appear)"
+    )
+    logger.info(f"Syncing commands to {scope_desc}...")
     try:
-        await bot.synchronise_interactions()
-        logger.info("Commands synced successfully!")
+        await bot.synchronise_interactions(delete_commands=True)
+        registered = sorted(str(c.name) for c in bot.application_commands)
+        logger.info(f"Commands synced successfully! Registered: {registered}")
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}", exc_info=True)
     

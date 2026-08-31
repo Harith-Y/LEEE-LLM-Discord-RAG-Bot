@@ -17,6 +17,10 @@ class Config:
     
     # Discord Configuration
     DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
+    # Optional: register slash commands to this one guild instead of globally.
+    # Guild commands update instantly; global commands can take up to ~1 hour to
+    # appear. Set this to your server's ID while iterating on commands.
+    DISCORD_DEV_GUILD_ID: Optional[str] = os.getenv("DISCORD_DEV_GUILD_ID")
     
     # API Keys
     NVIDIA_API_KEY: Optional[str] = os.getenv("NVIDIA_API_KEY")
