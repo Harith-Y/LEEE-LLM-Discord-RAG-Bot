@@ -22,7 +22,7 @@ from llama_index.embeddings.nvidia import utils as _nv_utils
 # NVIDIAEmbedding._validate_model() emits a spurious "Unable to determine validity"
 # warning at startup. Register it (idempotently) to silence that and to expose it
 # via the .available_models property. Uses integrate.api.nvidia.com (endpoint=None).
-_MODEL_ID = "nvidia/llama-nemotron-embed-vl-1b-v2"
+_MODEL_ID = "nvidia/nemotron-3.5-embed-1b"
 _nv_utils.EMBEDDING_MODEL_TABLE.setdefault(
     _MODEL_ID, _nv_utils.Model(id=_MODEL_ID, model_type="embedding")
 )

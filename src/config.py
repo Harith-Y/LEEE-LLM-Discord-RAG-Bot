@@ -70,7 +70,10 @@ class Config:
     # hosted replacement that still answers; it needs the NVIDIANemoRetrieverEmbedding
     # adapter (modality param) and supports Matryoshka output, so we request 1024 dims
     # to stay compatible with the existing Pinecone index (see PINECONE_DIMENSION).
-    EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2"
+    # UPDATE 2026-11-22: llama-nemotron-embed-vl-1b-v2 reached EOL on 2026-11-16 (HTTP 410).
+    # Replaced with nvidia/nemotron-3.5-embed-1b (1024 dims via Matryoshka). Different
+    # vector space => the Pinecone index MUST be re-ingested after this change.
+    EMBEDDING_MODEL: str = "nvidia/nemotron-3.5-embed-1b"
     EMBEDDING_TRUNCATE: str = "END"
     EMBEDDING_DIMENSIONS: int = 1024  # Matryoshka output size; must equal PINECONE_DIMENSION
     
