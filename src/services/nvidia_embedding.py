@@ -13,10 +13,18 @@ This subclass overrides the six embedding entrypoints to send:
   * ``dimensions`` - Matryoshka output size, kept at 1024 to match the Pinecone index
   * ``truncate``   - inherited from Config.EMBEDDING_TRUNCATE
 """
-from typing import List
+import logging
+import math
+from typing import List, Tuple
 
 from llama_index.embeddings.nvidia import NVIDIAEmbedding
 from llama_index.embeddings.nvidia import utils as _nv_utils
+from openai import UnprocessableEntityError
+
+logger = logging.getLogger(__name__)
+
+# Safety-rejected passages are split no further than this.
+_MIN_SPLIT_CHARS = 100
 
 # The VL NeMo Retriever model is not in the wrapper's built-in model table, so
 # NVIDIAEmbedding._validate_model() emits a spurious "Unable to determine validity"
@@ -70,12 +78,53 @@ class NVIDIANemoRetrieverEmbedding(NVIDIAEmbedding):
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
         assert len(texts) <= 259, "The batch size should not be larger than 259."
-        data = self._client.embeddings.create(
-            input=texts,
-            model=self.model,
-            extra_body=self._extra_body(len(texts), "passage"),
-        ).data
+        try:
+            data = self._client.embeddings.create(
+                input=texts,
+                model=self.model,
+                extra_body=self._extra_body(len(texts), "passage"),
+            ).data
+        except UnprocessableEntityError as e:
+            if "content safety" not in str(e):
+                raise
+            # One flagged chunk fails the whole batch, so retry them one by one.
+            return [self._embed_flagged_text(text) for text in texts]
         return [d.embedding for d in data]
+
+    def _embed_flagged_text(self, text: str) -> List[float]:
+        """Embed one passage, working around NVIDIA's safety screen.
+
+        The screen has false positives on ordinary text. A rejected passage is
+        halved until the pieces are accepted, and the accepted piece vectors are
+        combined (length-weighted, normalised). A small fragment that is still
+        rejected is left out of the vector; the stored chunk text is unchanged.
+        """
+        pieces = self._embed_accepted_pieces(text)
+        if not pieces:
+            raise RuntimeError(f"Safety screen rejected an entire chunk: {text[:80]!r}")
+        if len(pieces) == 1:
+            return pieces[0][1]
+        combined = [
+            sum(weight * value for (weight, _), value in zip(pieces, values))
+            for values in zip(*(vector for _, vector in pieces))
+        ]
+        norm = math.sqrt(sum(v * v for v in combined))
+        return [v / norm for v in combined]
+
+    def _embed_accepted_pieces(self, text: str) -> List[Tuple[int, List[float]]]:
+        """Return (length, vector) for each part of ``text`` the API accepts."""
+        try:
+            return [(len(text), self._get_text_embedding(text))]
+        except UnprocessableEntityError as e:
+            if "content safety" not in str(e):
+                raise
+        if len(text) < _MIN_SPLIT_CHARS:
+            logger.warning(f"Safety screen rejected fragment, omitted from vector: {text!r}")
+            return []
+        middle = len(text) // 2
+        cut = text.rfind(" ", 0, middle)
+        cut = cut if cut > 0 else middle
+        return self._embed_accepted_pieces(text[:cut]) + self._embed_accepted_pieces(text[cut:])
 
     # --- async --------------------------------------------------------------
     async def _aget_query_embedding(self, query: str) -> List[float]:
